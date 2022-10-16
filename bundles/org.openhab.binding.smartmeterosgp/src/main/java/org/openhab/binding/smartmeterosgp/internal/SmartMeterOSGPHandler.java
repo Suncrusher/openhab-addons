@@ -14,11 +14,20 @@ package org.openhab.binding.smartmeterosgp.internal;
 
 import static org.openhab.binding.smartmeterosgp.internal.SmartMeterOSGPBindingConstants.*;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.core.io.transport.serial.PortInUseException;
+import org.openhab.core.io.transport.serial.SerialPort;
+import org.openhab.core.io.transport.serial.SerialPortIdentifier;
+import org.openhab.core.io.transport.serial.SerialPortManager;
 import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingStatus;
+import org.openhab.core.thing.ThingStatusDetail;
 import org.openhab.core.thing.binding.BaseThingHandler;
 import org.openhab.core.types.Command;
 import org.openhab.core.types.RefreshType;
@@ -35,11 +44,17 @@ import org.slf4j.LoggerFactory;
 public class SmartMeterOSGPHandler extends BaseThingHandler {
 
     private final Logger logger = LoggerFactory.getLogger(SmartMeterOSGPHandler.class);
+    private final SerialPortManager serialPortManager;
+    private @Nullable SerialPort serialPort;
+
+    public @Nullable InputStream inputStream;
+    public @Nullable OutputStream outputStream;
 
     private @Nullable SmartMeterOSGPConfiguration config;
 
-    public SmartMeterOSGPHandler(Thing thing) {
+    public SmartMeterOSGPHandler(Thing thing, final SerialPortManager serialPortManager) {
         super(thing);
+        this.serialPortManager = serialPortManager;
     }
 
     @Override
@@ -62,30 +77,37 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
     public void initialize() {
         config = getConfigAs(SmartMeterOSGPConfiguration.class);
 
-        // TODO: Initialize the handler.
-        // The framework requires you to return from this method quickly, i.e. any network access must be done in
-        // the background initialization below.
-        // Also, before leaving this method a thing status from one of ONLINE, OFFLINE or UNKNOWN must be set. This
-        // might already be the real thing status in case you can decide it directly.
-        // In case you can not decide the thing status directly (e.g. for long running connection handshake using WAN
-        // access or similar) you should set status UNKNOWN here and then decide the real status asynchronously in the
-        // background.
+        final String port = config.port;
+        if (port == null) {
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.OFFLINE.CONFIGURATION_ERROR, "Port must be set!");
+            return;
+        }
 
-        // set the thing status to UNKNOWN temporarily and let the background task decide for the real status.
-        // the framework is then able to reuse the resources from the thing handler initialization.
-        // we set this upfront to reliably check status updates in unit tests.
-        updateStatus(ThingStatus.UNKNOWN);
+        // parse ports and if the port is found, initialize the reader
+        final SerialPortIdentifier portId = serialPortManager.getIdentifier(config.port);
+        if (portId == null) {
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.OFFLINE.CONFIGURATION_ERROR, "Port is not known!");
+            return;
+        }
 
-        // Example for background initialization:
-        scheduler.execute(() -> {
-            boolean thingReachable = true; // <background task with long running initialization here>
-            // when done do:
-            if (thingReachable) {
-                updateStatus(ThingStatus.ONLINE);
-            } else {
-                updateStatus(ThingStatus.OFFLINE);
-            }
-        });
+        // initialize serial port
+        try {
+            final SerialPort serialPort = portId.open(getThing().getUID().toString(), 2000);
+            this.serialPort = serialPort;
+
+            inputStream = serialPort.getInputStream();
+            outputStream = serialPort.getOutputStream();
+            serialPort.setRTS(true);
+            serialPort.setDTR(false);
+            logger.info("SerialPort {} Baud {} Databits {} StopBits {} Parity {} RTS {} DTR {}", portId.getName(),
+                    serialPort.getBaudRate(), serialPort.getDataBits(), serialPort.getStopBits(),
+                    serialPort.getParity(), serialPort.isRTS(), serialPort.isDTR());
+            updateStatus(ThingStatus.UNKNOWN);
+        } catch (final IOException ex) {
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.OFFLINE.COMMUNICATION_ERROR, "I/O error!");
+        } catch (PortInUseException e) {
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.OFFLINE.COMMUNICATION_ERROR, "Port is in use!");
+        }
 
         // These logging types should be primarily used by bindings
         // logger.trace("Example trace message");

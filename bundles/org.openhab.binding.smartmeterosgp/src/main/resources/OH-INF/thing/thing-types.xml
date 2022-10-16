@@ -20,21 +20,22 @@
 		</channels>
 
 		<config-description>
-			<parameter name="hostname" type="text" required="true">
-				<context>network-address</context>
-				<label>Hostname</label>
-				<description>Hostname or IP address of the device</description>
+			<parameter name="port" type="text" required="true">
+				<label>Serial Port</label>
+				<context>serial-port</context>
+				<limitToOptions>false</limitToOptions>
+				<description>The serial port that the button is connected to</description>
 			</parameter>
 			<parameter name="password" type="text" required="true">
 				<context>password</context>
 				<label>Password</label>
 				<description>Password to access the device</description>
+				<default>3030303030303030303030303030303030303030</default>
 			</parameter>
 			<parameter name="refreshInterval" type="integer" unit="s" min="1">
 				<label>Refresh Interval</label>
 				<description>Interval the device is polled in sec.</description>
-				<default>600</default>
-				<advanced>true</advanced>
+				<default>10</default>
 			</parameter>
 		</config-description>
 	</thing-type>
