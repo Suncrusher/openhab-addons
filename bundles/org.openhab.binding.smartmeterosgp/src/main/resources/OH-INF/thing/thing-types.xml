@@ -16,7 +16,16 @@
 		<description>Sample thing for SmartMeterOSGP Binding</description>
 
 		<channels>
-			<channel id="channel1" typeId="sample-channel"/>
+			<channel id="Fwd_active_power" typeId="Fwd_active_power"/>
+			<channel id="Rev_active_power" typeId="Rev_active_power"/>
+			<channel id="Import_Reactive_VAr" typeId="Import_Reactive_VAr"/>
+			<channel id="Export_Reactive_VAr" typeId="Export_Reactive_VAr"/>
+			<channel id="L1_current" typeId="L1_current"/>
+			<channel id="L2_current" typeId="L2_current"/>
+			<channel id="L3_current" typeId="L3_current"/>
+			<channel id="L1_voltage" typeId="L1_voltage"/>
+			<channel id="L2_voltage" typeId="L2_voltage"/>
+			<channel id="L3_voltage" typeId="L3_voltage"/>
 		</channels>
 
 		<config-description>
@@ -40,10 +49,66 @@
 		</config-description>
 	</thing-type>
 
-	<!-- Sample Channel Type -->
-	<channel-type id="sample-channel">
-		<item-type>Number:Temperature</item-type>
-		<label>Example Temperature</label><!-- Use uppercase words, except prepositions. 2-3 words, max 25 chars -->
-		<description>Sample channel for SmartMeterOSGP Binding</description>
+	<channel-type id="Fwd_active_power">
+		<item-type>Number:Power</item-type>
+		<label>Fwd Active W L1L2L3</label>
+		<description>Forward active power for L1,L2 and L3 in Watts</description>
+		<state pattern="%.1f %unit%" readOnly="true"></state>
 	</channel-type>
+	<channel-type id="Rev_active_power">
+		<item-type>Number:Power</item-type>
+		<label>Rev Active W L1L2L3</label>
+		<description>Reverse active power for L1,L2 and L3 in Watts</description>
+		<state pattern="%.1f %unit%" readOnly="true"></state>
+	</channel-type>
+	<channel-type id="Import_Reactive_VAr">
+		<item-type>Number:Power</item-type>
+		<label>Import Reactive VAr</label>
+		<description>Import Reactive VAr L1L2L3</description>
+		<state pattern="%.1f %unit%" readOnly="true"></state>
+	</channel-type>
+	<channel-type id="Export_Reactive_VAr">
+		<item-type>Number:Power</item-type>
+		<label>Export Reactive VAr</label>
+		<description>Export Reactive VAr L1L2L3</description>
+		<state pattern="%.1f %unit%" readOnly="true"></state>
+	</channel-type>
+	<channel-type id="L1_current">
+		<item-type>Number:ElectricCurrent</item-type>
+		<label>L1 Current</label>
+		<description>RMS Current L1</description>
+		<state pattern="%.1f %unit%" readOnly="true"></state>
+	</channel-type>
+	<channel-type id="L2_current">
+		<item-type>Number:ElectricCurrent</item-type>
+		<label>L2 Current</label>
+		<description>RMS Current L2</description>
+		<state pattern="%.1f %unit%" readOnly="true"></state>
+	</channel-type>
+	<channel-type id="L3_current">
+		<item-type>Number:ElectricCurrent</item-type>
+		<label>L3 Current</label>
+		<description>RMS Current L3</description>
+		<state pattern="%.1f %unit%" readOnly="true"></state>
+	</channel-type>
+
+	<channel-type id="L1_voltage">
+		<item-type>Number:ElectricPotential</item-type>
+		<label>L1 Voltage</label>
+		<description>RMS Voltage L1</description>
+		<state pattern="%.1f %unit%" readOnly="true"></state>
+	</channel-type>
+	<channel-type id="L2_voltage">
+		<item-type>Number:ElectricPotential</item-type>
+		<label>L2 Voltage</label>
+		<description>RMS Voltage L2</description>
+		<state pattern="%.1f %unit%" readOnly="true"></state>
+	</channel-type>
+	<channel-type id="L3_voltage">
+		<item-type>Number:ElectricPotential</item-type>
+		<label>L3 Voltage</label>
+		<description>RMS Voltage L3</description>
+		<state pattern="%.1f %unit%" readOnly="true"></state>
+	</channel-type>
+
 </thing:thing-descriptions>

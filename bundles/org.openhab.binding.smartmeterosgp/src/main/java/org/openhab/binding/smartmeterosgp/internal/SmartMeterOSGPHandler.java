@@ -17,6 +17,8 @@ import static org.openhab.binding.smartmeterosgp.internal.SmartMeterOSGPBindingC
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
@@ -51,6 +53,7 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
     public @Nullable OutputStream outputStream;
 
     private @Nullable SmartMeterOSGPConfiguration config;
+    private @Nullable ScheduledFuture<?> pollingJob = null;
 
     public SmartMeterOSGPHandler(Thing thing, final SerialPortManager serialPortManager) {
         super(thing);
@@ -59,7 +62,7 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
 
     @Override
     public void handleCommand(ChannelUID channelUID, Command command) {
-        if (CHANNEL_1.equals(channelUID.getId())) {
+        if (CHANNEL_Fwd_active_power.equals(channelUID.getId())) {
             if (command instanceof RefreshType) {
                 // TODO: handle data refresh
             }
@@ -103,6 +106,8 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
                     serialPort.getBaudRate(), serialPort.getDataBits(), serialPort.getStopBits(),
                     serialPort.getParity(), serialPort.isRTS(), serialPort.isDTR());
             updateStatus(ThingStatus.UNKNOWN);
+            pollingJob = scheduler.scheduleWithFixedDelay(this::pollStatus, 0, 2, TimeUnit.SECONDS);
+
         } catch (final IOException ex) {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.OFFLINE.COMMUNICATION_ERROR, "I/O error!");
         } catch (PortInUseException e) {
@@ -122,5 +127,42 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
         // Add a description to give user information to understand why thing does not work as expected. E.g.
         // updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
         // "Can not access device as username and/or password are invalid");
+    }
+
+    @Override
+    public void dispose() {
+        final @Nullable ScheduledFuture<?> pollingJob = this.pollingJob;
+        if (pollingJob != null) {
+            pollingJob.cancel(true);
+            this.pollingJob = null;
+        }
+        final @Nullable SerialPort serialPort = this.serialPort;
+        if (serialPort != null) {
+            serialPort.removeEventListener();
+            serialPort.close();
+            this.serialPort = null;
+        }
+        final InputStream inputStream = this.inputStream;
+        if (inputStream != null) {
+            try {
+                inputStream.close();
+            } catch (final IOException e) {
+                logger.debug("Error while closing the input stream: {}", e.getMessage());
+            }
+            this.inputStream = null;
+        }
+
+        final OutputStream outputStream = this.outputStream;
+        if (outputStream != null) {
+            try {
+                outputStream.close();
+            } catch (final IOException e) {
+                logger.debug("Error while closing the output stream: {}", e.getMessage());
+            }
+            this.outputStream = null;
+        }
+    }
+
+    public void pollStatus() {
     }
 }
