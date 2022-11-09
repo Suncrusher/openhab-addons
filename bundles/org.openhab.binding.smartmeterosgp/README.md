@@ -14,7 +14,7 @@ _Which different types are supported, which models were tested etc.?_
 _Note that it is planned to generate some part of this based on the XML files within ```src/main/resources/OH-INF/thing``` of your binding._
 
 - `bridge`: Short description of the Bridge, if any
-- `sample`: Short description of the Thing with the ThingTypeUID `sample`
+- `optical`: Short description of the Thing with the ThingTypeUID `optical`
 
 ## Discovery
 
@@ -47,13 +47,15 @@ _This should be mainly about its mandatory and optional configuration parameters
 
 _Note that it is planned to generate some part of this based on the XML files within ```src/main/resources/OH-INF/thing``` of your binding._
 
-### `sample` Thing Configuration
+### `optical` Thing Configuration
 
 | Name            | Type    | Description                           | Default | Required | Advanced |
 |-----------------|---------|---------------------------------------|---------|----------|----------|
-| hostname        | text    | Hostname or IP address of the device  | N/A     | yes      | no       |
+| port            | text    | Serial port to interface the device   | N/A     | yes      | no       |
+| userId          | integer | userId to access the device           | N/A     | no       | no       |
+| username        | text    | Username to access the device         | N/A     | no       | no       |
 | password        | text    | Password to access the device         | N/A     | yes      | no       |
-| refreshInterval | integer | Interval the device is polled in sec. | 600     | no       | yes      |
+| refreshInterval | integer | Interval the device is polled in sec. | 600     | no       | no       |
 
 ## Channels
 

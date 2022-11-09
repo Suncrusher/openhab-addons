@@ -26,6 +26,8 @@ public class SmartMeterOSGPConfiguration {
      * Sample configuration parameters. Replace with your own.
      */
     public String port = "";
+    public int userId = 1;
+    public String username = "";
     public String password = "";
-    public int refreshInterval = 600;
+    public int refreshInterval = 2;
 }

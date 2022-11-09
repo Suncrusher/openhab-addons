@@ -27,9 +27,11 @@ public class SmartMeterOSGPBindingConstants {
     private static final String BINDING_ID = "smartmeterosgp";
 
     // List of all Thing Type UIDs
-    public static final ThingTypeUID THING_TYPE_SAMPLE = new ThingTypeUID(BINDING_ID, "sample");
+    public static final ThingTypeUID THING_TYPE_SAMPLE = new ThingTypeUID(BINDING_ID, "optical");
 
     // List of all Channel ids
+    public static final String CHANNEL_Fwd_active_energy = "Fwd_active_energy";
+    public static final String CHANNEL_Rev_active_energy = "Rev_active_energy";
     public static final String CHANNEL_Fwd_active_power = "Fwd_active_power";
     public static final String CHANNEL_Rev_active_power = "Rev_active_power";
     public static final String CHANNEL_Import_Reactive_VAr = "Import_Reactive_VAr";
@@ -71,6 +73,32 @@ public class SmartMeterOSGPBindingConstants {
         Data_Not_Ready, // 7: 'dnr (Data Not Ready)',
         Data_Locked, // 8: 'dlk (Data Locked)',
         Renegotiate_Request, // 9: 'rno (Renegotiate Request)',
-        Invalid_Service_Sequence_State // 10: 'isss (Invalid Service Sequence State)',
+        Invalid_Service_Sequence_State, // 10: 'isss (Invalid Service Sequence State)',
+        Security_mechanism_error_detected,
+        Unknown_or_invalid_Called_APTitle_is_received,
+        Network_timeout_detected,
+        Node_is_not_reachable,
+        Request_is_too_large,
+        Response_is_too_large,
+        Segmentation_required,
+        Segmentation_error
+    };
+
+    public enum C1218_Baudrate {
+        Invalid,
+        Baud_300,
+        Baud_600,
+        Baud_1200,
+        Baud_2400,
+        Baud_4800,
+        Baud_9600,
+        Baud_14400,
+        Baud_19200,
+        Baud_28800,
+        Baud_57600,
+        Baud_38400,
+        Baud_115200,
+        Baud_128000,
+        Baud_256000
     };
 }
