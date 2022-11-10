@@ -29,7 +29,8 @@ import org.openhab.core.io.transport.serial.SerialPort;
 import org.openhab.core.io.transport.serial.SerialPortIdentifier;
 import org.openhab.core.io.transport.serial.SerialPortManager;
 import org.openhab.core.io.transport.serial.UnsupportedCommOperationException;
-import org.openhab.core.library.types.DecimalType;
+import org.openhab.core.library.types.QuantityType;
+import org.openhab.core.library.unit.Units;
 import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingStatus;
@@ -474,8 +475,8 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
     public boolean handleTable23Reply(ByteBuffer tableData) {
         int tableLength = tableData.getShort();
         tableData.order(byteOrder);
-        updateState(CHANNEL_Fwd_active_energy, new DecimalType(tableData.getInt()));
-        updateState(CHANNEL_Rev_active_energy, new DecimalType(tableData.getInt()));
+        updateState(CHANNEL_Fwd_active_energy, new QuantityType<>(tableData.getInt(), Units.WATT_HOUR));
+        updateState(CHANNEL_Rev_active_energy, new QuantityType<>(tableData.getInt(), Units.WATT_HOUR));
         tableData.position(3);
         logger.debug("Fwd Active {} Wh Rev Active {} Wh", tableData.getInt(), tableData.getInt());
         return true;
@@ -497,16 +498,16 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
                 tableData.getInt(), tableData.getInt(), tableData.getInt(), tableData.getInt(), tableData.getInt(),
                 tableData.getInt(), tableData.getInt(), tableData.getInt(), tableData.getInt(), tableData.getInt());
         tableData.position(3);
-        updateState(CHANNEL_Fwd_active_power, new DecimalType(tableData.getInt()));
-        updateState(CHANNEL_Rev_active_power, new DecimalType(tableData.getInt()));
-        updateState(CHANNEL_Import_Reactive_VAr, new DecimalType(tableData.getInt()));
-        updateState(CHANNEL_Export_Reactive_VAr, new DecimalType(tableData.getInt()));
-        updateState(CHANNEL_L1_current, new DecimalType(tableData.getInt() / 1000.0));
-        updateState(CHANNEL_L2_current, new DecimalType(tableData.getInt() / 1000.0));
-        updateState(CHANNEL_L3_current, new DecimalType(tableData.getInt() / 1000.0));
-        updateState(CHANNEL_L1_voltage, new DecimalType(tableData.getInt() / 1000.0));
-        updateState(CHANNEL_L2_voltage, new DecimalType(tableData.getInt() / 1000.0));
-        updateState(CHANNEL_L3_voltage, new DecimalType(tableData.getInt() / 1000.0));
+        updateState(CHANNEL_Fwd_active_power, new QuantityType<>(tableData.getInt(), Units.WATT));
+        updateState(CHANNEL_Rev_active_power, new QuantityType<>(tableData.getInt(), Units.WATT));
+        updateState(CHANNEL_Import_Reactive_VAr, new QuantityType<>(tableData.getInt(), Units.VAR));
+        updateState(CHANNEL_Export_Reactive_VAr, new QuantityType<>(tableData.getInt(), Units.VAR));
+        updateState(CHANNEL_L1_current, new QuantityType<>(tableData.getInt() / 1000.0, Units.AMPERE));
+        updateState(CHANNEL_L2_current, new QuantityType<>(tableData.getInt() / 1000.0, Units.AMPERE));
+        updateState(CHANNEL_L3_current, new QuantityType<>(tableData.getInt() / 1000.0, Units.AMPERE));
+        updateState(CHANNEL_L1_voltage, new QuantityType<>(tableData.getInt() / 1000.0, Units.VOLT));
+        updateState(CHANNEL_L2_voltage, new QuantityType<>(tableData.getInt() / 1000.0, Units.VOLT));
+        updateState(CHANNEL_L3_voltage, new QuantityType<>(tableData.getInt() / 1000.0, Units.VOLT));
         return true;
     }
 
