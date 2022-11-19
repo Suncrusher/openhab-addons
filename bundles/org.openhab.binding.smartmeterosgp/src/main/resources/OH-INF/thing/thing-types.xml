@@ -64,13 +64,13 @@
 	<channel-type id="Fwd_active_energy">
 		<item-type>Number:Energy</item-type>
 		<label>Fwd Active Wh L1L2L3</label>
-		<description>Forward active enery for L1,L2 and L3 in watt hours</description>
+		<description>Forward active enery for L1,L2 and L3 in kilowatt hours</description>
 		<state pattern="%d %unit%" readOnly="true"></state>
 	</channel-type>
 	<channel-type id="Rev_active_energy">
 		<item-type>Number:Energy</item-type>
 		<label>Rev Active Wh L1L2L3</label>
-		<description>Reverse active enery for L1,L2 and L3 in watt hours</description>
+		<description>Reverse active enery for L1,L2 and L3 in kilowatt hours</description>
 		<state pattern="%d %unit%" readOnly="true"></state>
 	</channel-type>
 	<channel-type id="Fwd_active_power">

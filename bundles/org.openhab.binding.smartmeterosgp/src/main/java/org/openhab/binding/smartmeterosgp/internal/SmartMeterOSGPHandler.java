@@ -289,7 +289,7 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
         return sendMsg(send, false, true);
     }
 
-    private boolean sendMsg(byte[] message, boolean hideContens, boolean logInitialNACKError) {
+    private boolean sendMsg(byte[] message, boolean hideContens, boolean logInitialError) {
         ByteBuffer msg = ByteBuffer.allocate(message.length + 8);
         msg.put(START);
         msg.put(IDENTITY);
@@ -306,9 +306,15 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
             for (int pktcount = 0; pktcount < 3; pktcount++) {
                 if (inputStream.available() > 0) {
                     byte[] unknown = inputStream.readNBytes(inputStream.available());
-                    logger.warn("Received unknown data {}", bb2hex(unknown));
+                    if (logInitialError) {
+                        logger.warn("Received unknown data {}", bb2hex(unknown));
+                    } else {
+                        logger.trace("Received unknown data {}", bb2hex(unknown));
+                    }
                 }
                 logger.trace("Sending {}", hideContens ? "<Hidden>" : bb2hex(send));
+                if (pktcount > 0)
+                    logInitialError = true;
                 outputStream.write(send);
                 int current = inputStream.read();
                 if (current < 0) {
@@ -320,15 +326,18 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
                         return true;
                     }
                     if ((byte) current == NACK) {
-                        if (logInitialNACKError) {
+                        if (logInitialError) {
                             logger.warn("Received a NACK after writing data");
                         } else {
                             logger.trace("Received a NACK after writing data");
-                            logInitialNACKError = true;
                         }
                         Thread.sleep(10);
                     } else {
-                        logger.warn("Received unknown response {}", String.format("%02X", current));
+                        if (logInitialError) {
+                            logger.warn("Received unknown response {}", String.format("%02X", current));
+                        } else {
+                            logger.trace("Received unknown response {}", String.format("%02X", current));
+                        }
                         Thread.sleep(2000);
                     }
                 }
@@ -475,8 +484,8 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
     public boolean handleTable23Reply(ByteBuffer tableData) {
         int tableLength = tableData.getShort();
         tableData.order(byteOrder);
-        updateState(CHANNEL_Fwd_active_energy, new QuantityType<>(tableData.getInt(), Units.WATT_HOUR));
-        updateState(CHANNEL_Rev_active_energy, new QuantityType<>(tableData.getInt(), Units.WATT_HOUR));
+        updateState(CHANNEL_Fwd_active_energy, new QuantityType<>(tableData.getInt() / 1000.0, Units.KILOWATT_HOUR));
+        updateState(CHANNEL_Rev_active_energy, new QuantityType<>(tableData.getInt() / 1000.0, Units.KILOWATT_HOUR));
         tableData.position(3);
         logger.debug("Fwd Active {} Wh Rev Active {} Wh", tableData.getInt(), tableData.getInt());
         return true;
