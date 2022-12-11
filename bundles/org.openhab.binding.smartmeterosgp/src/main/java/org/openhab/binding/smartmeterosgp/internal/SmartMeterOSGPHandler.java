@@ -62,14 +62,7 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
 
     enum ConnectState {
         Init,
-        IdentRequestSendt,
-        NegotiateRequestSendt,
-        LogonRequestSendt,
-        SecurityRequestSendt,
-        ReadTable0,
-        Connected,
-        LogoffRequestSendt,
-        TerminateRequestSendt
+        Connected
     };
 
     public ConnectState connectState = ConnectState.Init;
@@ -302,6 +295,7 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
         msg.order(ByteOrder.LITTLE_ENDIAN);
         msg.putShort((short) crc);
         final byte[] send = msg.array();
+        String sendLog = hideContens ? "<Hidden>" : bb2hex(send);
         try {
             for (int pktcount = 0; pktcount < 3; pktcount++) {
                 if (inputStream.available() > 0) {
@@ -312,13 +306,13 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
                         logger.trace("Received unknown data {}", bb2hex(unknown));
                     }
                 }
-                logger.trace("Sending {}", hideContens ? "<Hidden>" : bb2hex(send));
+                logger.trace("Sending {}", sendLog);
                 if (pktcount > 0)
                     logInitialError = true;
                 outputStream.write(send);
                 int current = inputStream.read();
                 if (current < 0) {
-                    logger.warn("Did not receive any reply after writing data");
+                    logger.warn("Did not receive any reply after sending {}", sendLog);
                     return false;
                 } else {
                     if ((byte) current == ACK) {
@@ -327,14 +321,19 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
                     }
                     if ((byte) current == NACK) {
                         if (logInitialError) {
-                            logger.warn("Received a NACK after writing data");
+                            logger.warn("Received a NACK after sending {}", sendLog);
                         } else {
                             logger.trace("Received a NACK after writing data");
                         }
                         Thread.sleep(10);
                     } else {
                         if (logInitialError) {
-                            logger.warn("Received unknown response {}", String.format("%02X", current));
+                            if ((byte) current == 0) {
+                                logger.warn("Received 0x00 and accepted as ACK");
+                                return true;
+                            }
+                            logger.warn("Received unknown response {} after sending {}", String.format("%02X", current),
+                                    sendLog);
                         } else {
                             logger.trace("Received unknown response {}", String.format("%02X", current));
                         }
@@ -380,7 +379,6 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
                         }
                         readActual.put((byte) current);
                     }
-                    // logger.trace("Received {} bytes", readActual.position());
                     // add wait states around reading the stream, so that interrupted transmissions are merged
                     Thread.sleep(20);
                     if (inputStream.available() > 0) {
@@ -392,6 +390,7 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
                 logger.trace("Received {}", bb2hex(readActual));
                 readActual.rewind();
                 if (readActual.get() != START) {
+                    // we will never get here, code is just in case the way data is read is changed later
                     logger.warn("Did not receive \\xEE as the first byte of the frame {}", bb2hex(readActual));
                     return null;
                 }
@@ -446,7 +445,7 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
 
         C1218_ResponceCodes responceCode = C1218_ResponceCodes.values()[readActual.get()];
         if (responceCode != C1218_ResponceCodes.Acknowledge) {
-            logger.warn("Unexpeced responce code {} ConnectState was {}", responceCode, connectState);
+            logger.warn("Unexpeced responce code {}", responceCode);
             return null;
         }
         return readActual;
@@ -493,7 +492,7 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
 
     public boolean handleTable28Reply(ByteBuffer tableData) {
         if (tableData.limit() != 44) {
-            logger.warn("Table28 has unexpected length {}", tableData.limit());
+            logger.warn("Table28 has unexpected length {} in message {}", tableData.limit(), bb2hex(tableData));
             return false;
         }
         int tableLength = tableData.getShort();
@@ -531,20 +530,21 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
 
     public void pollStatus() {
         if (connectState == ConnectState.Init) {
-            logger.debug("Sending Ident");
-            // connectState = ConnectState.IdentRequestSendt;
             toggleControl = false;
 
             // This did not fix initial NACK that is received when first RequestID_Ident is send
+            // logger.trace("Sending wakeup 0x55");
             // try {
             // outputStream.write(new byte[] { (byte) 0x55 });
-            // Thread.sleep(10);
+            // Thread.sleep(50);
             // } catch (IOException e1) {
-            // logger.warn("Error writing to serial port: {}", e1.getMessage(), e1);
+            // updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.OFFLINE.COMMUNICATION_ERROR,
+            // "Error writing to serial port");
             // } catch (InterruptedException e) {
             // return;
             // }
 
+            logger.debug("Sending Ident");
             if (!sendRequestID(RequestID_Ident)) {
                 updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.OFFLINE.COMMUNICATION_ERROR,
                         "Failed to send or receive Ident");
@@ -579,7 +579,7 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
             connectState = ConnectState.Connected;
         }
 
-        if (System.currentTimeMillis() - lastLogonTime > 5 * 60 * 1000) {
+        if (System.currentTimeMillis() - lastLogonTime > 9 * 60 * 1000) {
             TerminateSession();
             connectState = ConnectState.Init;
             return;
