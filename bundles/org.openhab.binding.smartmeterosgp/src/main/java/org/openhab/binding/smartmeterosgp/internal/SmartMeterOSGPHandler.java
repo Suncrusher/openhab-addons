@@ -400,8 +400,12 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
                 int length = readActual.getShort();
                 int crcPos = readActual.position() + length;
                 if (crcPos + 2 > readActual.limit()) {
-                    logger.warn("Length did not match expected length {}", bb2hex(readActual));
-                    return null;
+                    // Below is changed to debug because I get this about every 13 minutes with 2 sec polling on
+                    // 83334-3I. I did not have that issue with 83331-3i and same IR Probe.
+                    logger.debug("Specified length {} longer than received data {}", length, bb2hex(readActual));
+                    logger.trace("Sending NACK");
+                    outputStream.write(NACK);
+                    continue;
                 }
                 readActual.order(ByteOrder.LITTLE_ENDIAN);
                 int messageCrc = readActual.getChar(crcPos);
@@ -411,7 +415,7 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
                             calculatedCrc);
                     logger.trace("Sending NACK");
                     outputStream.write(NACK);
-                    return null;
+                    continue;
                 }
                 boolean multipacket = (ctrl & 0x80) != 0;
                 boolean firstInMultipacket = (ctrl & 0x40) != 0;
