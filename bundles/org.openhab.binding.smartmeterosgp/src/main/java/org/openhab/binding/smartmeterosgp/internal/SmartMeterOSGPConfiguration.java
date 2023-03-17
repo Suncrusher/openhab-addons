@@ -30,4 +30,5 @@ public class SmartMeterOSGPConfiguration {
     public String username = "";
     public String password = "";
     public int refreshInterval = 2;
+    public int logoffInterval = 9 * 60;
 }

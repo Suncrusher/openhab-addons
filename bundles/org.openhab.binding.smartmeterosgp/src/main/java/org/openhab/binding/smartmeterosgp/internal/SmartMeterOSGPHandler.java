@@ -583,11 +583,7 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
             connectState = ConnectState.Connected;
         }
 
-        if (System.currentTimeMillis() - lastLogonTime > 9 * 60 * 1000) {
-            TerminateSession();
-            connectState = ConnectState.Init;
-            return;
-        }
+        boolean successfullyRead = false;
 
         ByteBuffer readActual = sendReadPartialTable(28, 0, 40);
         if (readActual != null) {
@@ -595,11 +591,20 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
                 readActual = sendReadPartialTable(23, 0, 8);
                 if (readActual != null) {
                     if (handleTable23Reply(readActual)) {
-                        return;
+                        successfullyRead = true;
                     }
                 }
             }
         }
+
+        if (System.currentTimeMillis() - lastLogonTime + (config.refreshInterval * 1000) > config.logoffInterval
+                * 1000) {
+            TerminateSession();
+            connectState = ConnectState.Init;
+            return;
+        }
+        if (successfullyRead)
+            return;
         connectState = ConnectState.Init;
         updateStatus(ThingStatus.OFFLINE);
     }

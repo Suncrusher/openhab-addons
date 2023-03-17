@@ -55,7 +55,8 @@ _Note that it is planned to generate some part of this based on the XML files wi
 | userId          | integer | userId to access the device           | N/A     | no       | no       |
 | username        | text    | Username to access the device         | N/A     | no       | no       |
 | password        | text    | Password to access the device         | N/A     | yes      | no       |
-| refreshInterval | integer | Interval the device is polled in sec. | 600     | no       | no       |
+| refreshInterval | integer | Interval the device is polled in sec. | 2       | no       | no       |
+| logoffInterval  | integer | Interval that the connection is logoff| 900     | no       | no       |
 
 ## Channels
 

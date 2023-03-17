@@ -58,6 +58,11 @@
 				<description>Interval the device is polled in sec.</description>
 				<default>2</default>
 			</parameter>
+			<parameter name="logoffInterval" type="integer" unit="s" min="1">
+				<label>Logoff Interval</label>
+				<description>Interval between the session being closed and logging off</description>
+				<default>540</default>
+			</parameter>
 		</config-description>
 	</thing-type>
 
