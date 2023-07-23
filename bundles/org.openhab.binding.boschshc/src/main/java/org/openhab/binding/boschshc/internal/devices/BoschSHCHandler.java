@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2022 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -40,7 +40,6 @@ import org.openhab.core.types.RefreshType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 
 /**
@@ -80,12 +79,7 @@ public abstract class BoschSHCHandler extends BaseThingHandler {
         public final Collection<String> affectedChannels;
     }
 
-    /**
-     * Reusable gson instance to convert a class to json string and back in derived classes.
-     */
-    protected static final Gson GSON = new Gson();
-
-    protected final Logger logger = LoggerFactory.getLogger(getClass());
+    private final Logger logger = LoggerFactory.getLogger(getClass());
 
     /**
      * Services of the device.
@@ -100,14 +94,14 @@ public abstract class BoschSHCHandler extends BaseThingHandler {
      * Returns the unique id of the Bosch device or service.
      * <p>
      * For physical devices, the ID looks like
-     * 
+     *
      * <pre>
      * hdm:Cameras:d20354de-44b5-3acc-924c-24c98d59da42
      * hdm:ZigBee:000d6f0016d1c087
      * </pre>
-     * 
+     *
      * For virtual devices / services, static IDs like the following are used:
-     * 
+     *
      * <pre>
      * ventilationService
      * smokeDetectionSystem
@@ -124,7 +118,6 @@ public abstract class BoschSHCHandler extends BaseThingHandler {
      */
     @Override
     public void initialize() {
-
         // Initialize device services
         try {
             this.initializeServices();
@@ -161,7 +154,7 @@ public abstract class BoschSHCHandler extends BaseThingHandler {
      * @param serviceName Name of service the update came from.
      * @param stateData Current state of device service. Serialized as JSON.
      */
-    public void processUpdate(String serviceName, JsonElement stateData) {
+    public void processUpdate(String serviceName, @Nullable JsonElement stateData) {
         // Check services of device to correctly
         for (DeviceService<? extends BoschSHCServiceState> deviceService : this.services) {
             BoschSHCService<? extends BoschSHCServiceState> service = deviceService.service;
@@ -241,8 +234,29 @@ public abstract class BoschSHCHandler extends BaseThingHandler {
     protected <TService extends BoschSHCService<TState>, TState extends BoschSHCServiceState> TService createService(
             Supplier<TService> newService, Consumer<TState> stateUpdateListener, Collection<String> affectedChannels)
             throws BoschSHCException {
+        return createService(newService, stateUpdateListener, affectedChannels, false);
+    }
+
+    /**
+     * Creates and registers a new service for this device.
+     *
+     * @param <TService> Type of service.
+     * @param <TState> Type of service state.
+     * @param newService Supplier function to create a new instance of the service.
+     * @param stateUpdateListener Function to call when a state update was received
+     *            from the device.
+     * @param affectedChannels Channels which are affected by the state of this
+     *            service.
+     * @param shouldFetchInitialState indicates whether the initial state should be actively requested from the device
+     *            or service. Useful if state updates are not included in long poll results.
+     * @return Instance of registered service.
+     * @throws BoschSHCException
+     */
+    protected <TService extends BoschSHCService<TState>, TState extends BoschSHCServiceState> TService createService(
+            Supplier<TService> newService, Consumer<TState> stateUpdateListener, Collection<String> affectedChannels,
+            boolean shouldFetchInitialState) throws BoschSHCException {
         TService service = newService.get();
-        this.registerService(service, stateUpdateListener, affectedChannels);
+        this.registerService(service, stateUpdateListener, affectedChannels, shouldFetchInitialState);
         return service;
     }
 
@@ -283,7 +297,6 @@ public abstract class BoschSHCHandler extends BaseThingHandler {
     protected <TService extends BoschSHCService<TState>, TState extends BoschSHCServiceState> void registerService(
             TService service, Consumer<TState> stateUpdateListener, Collection<String> affectedChannels,
             boolean shouldFetchInitialState) throws BoschSHCException {
-
         String deviceId = verifyBoschID();
         service.initialize(getBridgeHandler(), deviceId, stateUpdateListener);
         this.registerService(service, affectedChannels);
@@ -296,7 +309,7 @@ public abstract class BoschSHCHandler extends BaseThingHandler {
     /**
      * Actively requests the initial state for the given service. This is required if long poll results do not contain
      * status updates for the given service.
-     * 
+     *
      * @param <TService> Type of the service for which the state should be obtained
      * @param <TState> Type of the objects to serialize and deserialize the service state
      * @param service Service for which the state should be requested
@@ -304,7 +317,6 @@ public abstract class BoschSHCHandler extends BaseThingHandler {
      */
     private <TService extends BoschSHCService<TState>, TState extends BoschSHCServiceState> void fetchInitialState(
             TService service, Consumer<TState> stateUpdateListener) {
-
         try {
             @Nullable
             TState serviceState = service.getState();
@@ -325,14 +337,13 @@ public abstract class BoschSHCHandler extends BaseThingHandler {
      * Registers a write-only service that does not receive states from the bridge.
      * <p>
      * Examples for such services are the actions of the intrusion detection service.
-     * 
+     *
      * @param <TService> Type of service.
      * @param service Service to register.
      * @throws BoschSHCException If no device ID is set.
      */
     protected <TService extends AbstractBoschSHCService> void registerStatelessService(TService service)
             throws BoschSHCException {
-
         String deviceId = verifyBoschID();
         service.initialize(getBridgeHandler(), deviceId);
         // do not register in service list because the service can not receive state updates
@@ -340,7 +351,7 @@ public abstract class BoschSHCHandler extends BaseThingHandler {
 
     /**
      * Verifies that a Bosch device or service ID is set and throws an exception if this is not the case.
-     * 
+     *
      * @return the Bosch ID, if present
      * @throws BoschSHCException if no Bosch ID is set
      */
@@ -404,7 +415,7 @@ public abstract class BoschSHCHandler extends BaseThingHandler {
     /**
      * Requests a service to refresh its state.
      * Sets the device offline if request fails.
-     * 
+     *
      * @param <TService> Type of service.
      * @param <TState> Type of service state.
      * @param service Service to refresh state for.
@@ -433,12 +444,12 @@ public abstract class BoschSHCHandler extends BaseThingHandler {
      */
     private <TState extends BoschSHCServiceState> void registerService(BoschSHCService<TState> service,
             Collection<String> affectedChannels) {
-        this.services.add(new DeviceService<TState>(service, affectedChannels));
+        this.services.add(new DeviceService<>(service, affectedChannels));
     }
 
     /**
      * Sends a HTTP POST request with empty body.
-     * 
+     *
      * @param <TService> Type of service.
      * @param service Service implementing the action
      */
@@ -457,7 +468,7 @@ public abstract class BoschSHCHandler extends BaseThingHandler {
 
     /**
      * Sends a HTTP POST request with the given request body.
-     * 
+     *
      * @param <TService> Type of service.
      * @param <TState> Type of the request to be sent.
      * @param service Service implementing the action

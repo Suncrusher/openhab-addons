@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2022 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -14,10 +14,7 @@ package org.openhab.binding.shelly.internal;
 
 import static org.openhab.binding.shelly.internal.discovery.ShellyThingCreator.*;
 
-import java.util.Collections;
 import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.openhab.core.thing.ThingTypeUID;
@@ -35,26 +32,84 @@ public class ShellyBindingConstants {
     public static final String BINDING_ID = "shelly";
     public static final String SYSTEM_ID = "system";
 
-    public static final Set<ThingTypeUID> SUPPORTED_THING_TYPES_UIDS = Collections.unmodifiableSet(Stream
-            .of(THING_TYPE_SHELLY1, THING_TYPE_SHELLY1L, THING_TYPE_SHELLY1PM, THING_TYPE_SHELLYEM,
-                    THING_TYPE_SHELLY3EM, THING_TYPE_SHELLY2_RELAY, THING_TYPE_SHELLY25_RELAY,
-                    THING_TYPE_SHELLY25_ROLLER, THING_TYPE_SHELLY4PRO, THING_TYPE_SHELLYPLUG, THING_TYPE_SHELLYPLUGS,
-                    THING_TYPE_SHELLYPLUGU1, THING_TYPE_SHELLYUNI, THING_TYPE_SHELLYDIMMER, THING_TYPE_SHELLYDIMMER2,
-                    THING_TYPE_SHELLYIX3, THING_TYPE_SHELLYBULB, THING_TYPE_SHELLYDUO, THING_TYPE_SHELLYVINTAGE,
-                    THING_TYPE_SHELLYDUORGBW, THING_TYPE_SHELLYRGBW2_COLOR, THING_TYPE_SHELLYRGBW2_WHITE,
-                    THING_TYPE_SHELLYHT, THING_TYPE_SHELLYTRV, THING_TYPE_SHELLYSENSE, THING_TYPE_SHELLYEYE,
-                    THING_TYPE_SHELLYSMOKE, THING_TYPE_SHELLYGAS, THING_TYPE_SHELLYFLOOD, THING_TYPE_SHELLYDOORWIN,
-                    THING_TYPE_SHELLYDOORWIN2, THING_TYPE_SHELLYBUTTON1, THING_TYPE_SHELLYBUTTON2,
-                    THING_TYPE_SHELLMOTION, THING_TYPE_SHELLMOTION, THING_TYPE_SHELLYPLUS1, THING_TYPE_SHELLYPLUS1PM,
-                    THING_TYPE_SHELLYPLUS2PM_RELAY, THING_TYPE_SHELLYPLUS2PM_ROLLER, THING_TYPE_SHELLYPRO1,
-                    THING_TYPE_SHELLYPRO1PM, THING_TYPE_SHELLYPRO2_RELAY, THING_TYPE_SHELLYPRO2PM_RELAY,
-                    THING_TYPE_SHELLYPRO2PM_ROLLER, THING_TYPE_SHELLYPRO3, THING_TYPE_SHELLYPRO4PM,
-                    THING_TYPE_SHELLYPLUSI4, THING_TYPE_SHELLYPLUSI4DC, THING_TYPE_SHELLYPLUSHT,
-                    THING_TYPE_SHELLYPLUSPLUGUS, THING_TYPE_SHELLYPROTECTED, THING_TYPE_SHELLYUNKNOWN)
-            .collect(Collectors.toSet()));
+    public static final Set<ThingTypeUID> SUPPORTED_THING_TYPES_UIDS = Set.of(THING_TYPE_SHELLY1, //
+            THING_TYPE_SHELLY1L, //
+            THING_TYPE_SHELLY1PM, //
+            THING_TYPE_SHELLYEM, //
+            THING_TYPE_SHELLY3EM, //
+            THING_TYPE_SHELLY2_RELAY, //
+            THING_TYPE_SHELLY2_ROLLER, //
+            THING_TYPE_SHELLY25_RELAY, //
+            THING_TYPE_SHELLY25_ROLLER, //
+            THING_TYPE_SHELLY4PRO, //
+            THING_TYPE_SHELLYPLUG, //
+            THING_TYPE_SHELLYPLUGS, //
+            THING_TYPE_SHELLYPLUGU1, //
+            THING_TYPE_SHELLYUNI, //
+            THING_TYPE_SHELLYDIMMER, //
+            THING_TYPE_SHELLYDIMMER2, //
+            THING_TYPE_SHELLYIX3, //
+            THING_TYPE_SHELLYBULB, //
+            THING_TYPE_SHELLYDUO, //
+            THING_TYPE_SHELLYVINTAGE, //
+            THING_TYPE_SHELLYDUORGBW, //
+            THING_TYPE_SHELLYRGBW2_COLOR, //
+            THING_TYPE_SHELLYRGBW2_WHITE, //
+            THING_TYPE_SHELLYHT, //
+            THING_TYPE_SHELLYTRV, //
+            THING_TYPE_SHELLYSENSE, //
+            THING_TYPE_SHELLYEYE, //
+            THING_TYPE_SHELLYSMOKE, //
+            THING_TYPE_SHELLYGAS, //
+            THING_TYPE_SHELLYFLOOD, //
+            THING_TYPE_SHELLYDOORWIN, //
+            THING_TYPE_SHELLYDOORWIN2, //
+            THING_TYPE_SHELLYBUTTON1, //
+            THING_TYPE_SHELLYBUTTON2, //
+            THING_TYPE_SHELLMOTION, //
+
+            // Shelly Plus
+            THING_TYPE_SHELLYPLUS1, //
+            THING_TYPE_SHELLYPLUS1PM, //
+            THING_TYPE_SHELLYPLUS2PM_RELAY, //
+            THING_TYPE_SHELLYPLUS2PM_ROLLER, //
+            THING_TYPE_SHELLYPLUSI4, //
+            THING_TYPE_SHELLYPLUSI4DC, //
+            THING_TYPE_SHELLYPLUSHT, //
+            THING_TYPE_SHELLYPLUSSMOKE, //
+            THING_TYPE_SHELLYPLUSPLUGS, //
+            THING_TYPE_SHELLYPLUSPLUGUS, //
+            THING_TYPE_SHELLYPLUSDIMMERUS, //
+
+            // Shelly Wall Display
+            THING_TYPE_SHELLYPLUSWALLDISPLAY, //
+
+            // Shelly Plus Mini
+            THING_TYPE_SHELLYMINI1, //
+            THING_TYPE_SHELLYMINIPM, //
+            THING_TYPE_SHELLYMINI1PM, //
+
+            // Shelly Pro
+            THING_TYPE_SHELLYPRO1, //
+            THING_TYPE_SHELLYPRO1PM, //
+            THING_TYPE_SHELLYPRO2_RELAY, //
+            THING_TYPE_SHELLYPRO2PM_RELAY, //
+            THING_TYPE_SHELLYPRO2PM_ROLLER, //
+            THING_TYPE_SHELLYPRO3, //
+            THING_TYPE_SHELLYPRO3EM, //
+            THING_TYPE_SHELLYPROEM50, //
+            THING_TYPE_SHELLYPRO4PM, //
+
+            // Shelly BLU
+            THING_TYPE_SHELLYBLUBUTTON, //
+            THING_TYPE_SHELLYBLUDW, //
+
+            THING_TYPE_SHELLYPROTECTED, //
+            THING_TYPE_SHELLYUNKNOWN);
 
     // Thing Configuration Properties
     public static final String CONFIG_DEVICEIP = "deviceIp";
+    public static final String CONFIG_DEVICEADDRESS = "deviceAddress";
     public static final String CONFIG_HTTP_USERID = "userId";
     public static final String CONFIG_HTTP_PASSWORD = "password";
     public static final String CONFIG_UPDATE_INTERVAL = "updateInterval";
@@ -64,6 +119,7 @@ public class ShellyBindingConstants {
     public static final String PROPERTY_DEV_TYPE = "deviceType";
     public static final String PROPERTY_DEV_MODE = "deviceMode";
     public static final String PROPERTY_DEV_GEN = "deviceGeneration";
+    public static final String PROPERTY_GW_DEVICE = "gatewayDevice";
     public static final String PROPERTY_HWREV = "deviceHwRev";
     public static final String PROPERTY_HWBATCH = "deviceHwBatch";
     public static final String PROPERTY_UPDATE_PERIOD = "devUpdatePeriod";
@@ -117,6 +173,7 @@ public class ShellyBindingConstants {
     public static final String CHANNEL_EMETER_VOLTAGE = "voltage";
     public static final String CHANNEL_EMETER_CURRENT = "current";
     public static final String CHANNEL_EMETER_PFACTOR = "powerFactor";
+    public static final String CHANNEL_EMETER_RESETTOTAL = "resetTotals";
 
     public static final String CHANNEL_GROUP_SENSOR = "sensors";
     public static final String CHANNEL_SENSOR_TEMP = "temperature";
@@ -129,6 +186,7 @@ public class ShellyBindingConstants {
     public static final String CHANNEL_SENSOR_TILT = "tilt";
     public static final String CHANNEL_SENSOR_FLOOD = "flood";
     public static final String CHANNEL_SENSOR_SMOKE = "smoke";
+    public static final String CHANNEL_SENSOR_MUTE = "mute";
     public static final String CHANNEL_SENSOR_STATE = "state";
     public static final String CHANNEL_SENSOR_VALVE = "valve";
     public static final String CHANNEL_SENSOR_SSTATE = "status"; // Shelly Gas
@@ -149,10 +207,17 @@ public class ShellyBindingConstants {
     public static final String CHANNEL_CONTROL_PROFILE = "selectedProfile";
 
     // External sensors for Shelly1/1PM
-    public static final String CHANNEL_ESENDOR_TEMP1 = CHANNEL_SENSOR_TEMP + "1";
-    public static final String CHANNEL_ESENDOR_TEMP2 = CHANNEL_SENSOR_TEMP + "2";
-    public static final String CHANNEL_ESENDOR_TEMP3 = CHANNEL_SENSOR_TEMP + "3";
-    public static final String CHANNEL_ESENDOR_HUMIDITY = CHANNEL_SENSOR_HUM;
+    public static final String CHANNEL_ESENSOR_TEMP1 = CHANNEL_SENSOR_TEMP + "1";
+    public static final String CHANNEL_ESENSOR_TEMP2 = CHANNEL_SENSOR_TEMP + "2";
+    public static final String CHANNEL_ESENSOR_TEMP3 = CHANNEL_SENSOR_TEMP + "3";
+    public static final String CHANNEL_ESENSOR_TEMP4 = CHANNEL_SENSOR_TEMP + "4";
+    public static final String CHANNEL_ESENSOR_TEMP5 = CHANNEL_SENSOR_TEMP + "5";
+    public static final String CHANNEL_ESENSOR_HUMIDITY = CHANNEL_SENSOR_HUM;
+    public static final String CHANNEL_ESENSOR_VOLTAGE = CHANNEL_SENSOR_VOLTAGE;
+    public static final String CHANNEL_ESENSOR_DIGITALINPUT = "digitalInput";
+    public static final String CHANNEL_ESENSOR_ANALOGINPUT = "analogInput";
+    public static final String CHANNEL_ESENSOR_INPUT = "input";
+    public static final String CHANNEL_ESENSOR_INPUT1 = CHANNEL_ESENSOR_INPUT + "1";
 
     public static final String CHANNEL_GROUP_CONTROL = "control";
     public static final String CHANNEL_SENSE_KEY = "key";
@@ -185,6 +250,7 @@ public class ShellyBindingConstants {
     // Device Status
     public static final String CHANNEL_GROUP_DEV_STATUS = "device";
     public static final String CHANNEL_DEVST_NAME = "deviceName";
+    public static final String CHANNEL_DEVST_GATEWAY = "gatewayDevice";
     public static final String CHANNEL_DEVST_UPTIME = "uptime";
     public static final String CHANNEL_DEVST_HEARTBEAT = "heartBeat";
     public static final String CHANNEL_DEVST_RSSI = "wifiSignal";
@@ -194,6 +260,8 @@ public class ShellyBindingConstants {
     public static final String CHANNEL_DEVST_ACCUWATTS = "accumulatedWatts";
     public static final String CHANNEL_DEVST_ACCUTOTAL = "accumulatedWTotal";
     public static final String CHANNEL_DEVST_ACCURETURNED = "accumulatedReturned";
+    public static final String CHANNEL_DEVST_RESETTOTAL = CHANNEL_EMETER_RESETTOTAL;
+
     public static final String CHANNEL_DEVST_CHARGER = "charger";
     public static final String CHANNEL_DEVST_UPDATE = "updateAvailable";
     public static final String CHANNEL_DEVST_SELFTTEST = "selfTest";
@@ -254,6 +322,7 @@ public class ShellyBindingConstants {
     public static final int DIGITS_WATT = 2;
     public static final int DIGITS_KWH = 3;
     public static final int DIGITS_VOLT = 1;
+    public static final int DIGITS_AMPERE = 3;
     public static final int DIGITS_TEMP = 1;
     public static final int DIGITS_LUX = 0;
     public static final int DIGITS_PERCENT = 1;
@@ -265,4 +334,7 @@ public class ShellyBindingConstants {
     public static final int UPDATE_SETTINGS_INTERVAL_SECONDS = 60; // check for updates every x sec
     public static final int HEALTH_CHECK_INTERVAL_SEC = 300; // Health check interval, 5min
     public static final int VIBRATION_FILTER_SEC = 5; // Absore duplicate vibration events for xx sec
+
+    public static final String BUNDLE_RESOURCE_SNIPLETS = "sniplets"; // where to find code sniplets in the bundle
+    public static final String BUNDLE_RESOURCE_SCRIPTS = "scripts"; // where to find scrips in the bundle
 }

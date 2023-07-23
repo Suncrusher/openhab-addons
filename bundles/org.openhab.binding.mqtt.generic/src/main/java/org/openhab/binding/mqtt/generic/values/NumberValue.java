@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2022 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -27,7 +27,6 @@ import org.openhab.core.library.types.UpDownType;
 import org.openhab.core.library.unit.Units;
 import org.openhab.core.types.Command;
 import org.openhab.core.types.StateDescriptionFragmentBuilder;
-import org.openhab.core.types.UnDefType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -75,21 +74,17 @@ public class NumberValue extends Value {
     }
 
     @Override
-    public String getMQTTpublishValue(@Nullable String pattern) {
-        if (state == UnDefType.UNDEF) {
-            return "";
-        }
-
+    public String getMQTTpublishValue(Command command, @Nullable String pattern) {
         String formatPattern = pattern;
         if (formatPattern == null) {
             formatPattern = "%s";
         }
 
-        return state.format(formatPattern);
+        return command.format(formatPattern);
     }
 
     @Override
-    public void update(Command command) throws IllegalArgumentException {
+    public Command parseCommand(Command command) throws IllegalArgumentException {
         BigDecimal newValue = null;
         if (command instanceof DecimalType) {
             newValue = ((DecimalType) command).toBigDecimal();
@@ -106,14 +101,14 @@ public class NumberValue extends Value {
             newValue = new BigDecimal(command.toString());
         }
         if (!checkConditions(newValue)) {
-            return;
+            throw new IllegalArgumentException(newValue + " is out of range");
         }
         // items with units specified in the label in the UI but no unit on mqtt are stored as
         // DecimalType to avoid conversions (e.g. % expects 0-1 rather than 0-100)
         if (!Units.ONE.equals(unit)) {
-            state = new QuantityType<>(newValue, unit);
+            return new QuantityType<>(newValue, unit);
         } else {
-            state = new DecimalType(newValue);
+            return new DecimalType(newValue);
         }
     }
 
@@ -130,7 +125,7 @@ public class NumberValue extends Value {
     private BigDecimal getQuantityTypeAsDecimal(QuantityType<?> qType) {
         BigDecimal val = qType.toBigDecimal();
         if (!qType.getUnit().isCompatible(Units.ONE)) {
-            QuantityType<?> convertedType = qType.toUnit(unit);
+            QuantityType<?> convertedType = qType.toInvertibleUnit(unit);
             if (convertedType != null) {
                 val = convertedType.toBigDecimal();
             }
@@ -149,6 +144,11 @@ public class NumberValue extends Value {
         if (min != null) {
             builder = builder.withMinimum(min);
         }
-        return builder.withStep(step).withPattern("%s %unit%");
+        if (!unit.equals(Units.ONE)) {
+            builder.withPattern("%s " + unit);
+        } else {
+            builder.withPattern("%s %unit%");
+        }
+        return builder.withStep(step);
     }
 }

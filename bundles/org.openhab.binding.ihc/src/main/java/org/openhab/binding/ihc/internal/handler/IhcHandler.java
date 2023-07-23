@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2022 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -180,6 +180,9 @@ public class IhcHandler extends BaseThingHandler implements IhcEventListener {
         linkedResourceIds.clear();
         linkedResourceIds.addAll(getAllLinkedChannelsResourceIds());
         logger.debug("Linked resources {}: {}", linkedResourceIds.size(), linkedResourceIds);
+
+        updateStatus(ThingStatus.UNKNOWN, ThingStatusDetail.NONE,
+                "Initializing communication to the IHC / ELKO controller");
 
         if (controlJob == null || controlJob.isCancelled()) {
             logger.debug("Start control task, interval={}sec", 1);
@@ -542,8 +545,6 @@ public class IhcHandler extends BaseThingHandler implements IhcEventListener {
                     conf.username);
             ihc = new IhcClient(conf.hostname, conf.username, conf.password, conf.timeout, conf.tlsVersion);
             ihc.openConnection();
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.NONE,
-                    "Initializing communication to the IHC / ELKO controller");
             loadProject();
             createChannels();
             updateControllerProperties();

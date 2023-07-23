@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2022 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -50,7 +50,7 @@ public class ChromecastActions implements ThingActions {
             logger.warn("Handler is null, cannot play.");
             return false;
         } else {
-            return handler.playURL(url, null);
+            return handler.playURL(null, url, null);
         }
     }
 
@@ -68,7 +68,7 @@ public class ChromecastActions implements ThingActions {
             logger.warn("Handler is null, cannot tweet.");
             return false;
         } else {
-            return handler.playURL(url, mediaType);
+            return handler.playURL(null, url, mediaType);
         }
     }
 

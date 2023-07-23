@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2022 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -40,6 +40,7 @@ import org.openhab.binding.pulseaudio.internal.items.Source;
 import org.openhab.core.audio.AudioFormat;
 import org.openhab.core.audio.AudioSink;
 import org.openhab.core.audio.AudioSource;
+import org.openhab.core.audio.utils.AudioSinkUtils;
 import org.openhab.core.config.core.Configuration;
 import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.IncreaseDecreaseType;
@@ -89,9 +90,12 @@ public class PulseaudioHandler extends BaseThingHandler {
 
     private final BundleContext bundleContext;
 
-    public PulseaudioHandler(Thing thing, BundleContext bundleContext) {
+    private AudioSinkUtils audioSinkUtils;
+
+    public PulseaudioHandler(Thing thing, BundleContext bundleContext, AudioSinkUtils audioSinkUtils) {
         super(thing);
         this.bundleContext = bundleContext;
+        this.audioSinkUtils = audioSinkUtils;
     }
 
     @Override
@@ -127,7 +131,7 @@ public class PulseaudioHandler extends BaseThingHandler {
             return;
         }
         final PulseaudioHandler thisHandler = this;
-        PulseAudioAudioSink audioSink = new PulseAudioAudioSink(thisHandler, scheduler);
+        PulseAudioAudioSink audioSink = new PulseAudioAudioSink(thisHandler, scheduler, audioSinkUtils);
         scheduler.submit(new Runnable() {
             @Override
             public void run() {

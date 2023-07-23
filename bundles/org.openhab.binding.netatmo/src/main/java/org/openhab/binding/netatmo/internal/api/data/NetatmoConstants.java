@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2022 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -84,7 +84,7 @@ public class NetatmoConstants {
         PRESSURE(260, 1260, 0.1, HECTO(SIUnits.PASCAL), "pressure", "measure", true),
         CO2(0, 5000, 50, Units.PARTS_PER_MILLION, "co2", "measure", true),
         NOISE(35, 120, 1, Units.DECIBEL, "noise", "measure", true),
-        RAIN_QUANTITY(0, 150, 0.1, MILLI(SIUnits.METRE), "sum_rain", "sum_rain", false),
+        RAIN_QUANTITY(0, Double.MAX_VALUE, 0.1, MILLI(SIUnits.METRE), "sum_rain", "sum_rain", false),
         RAIN_INTENSITY(0, 150, 0.1, Units.MILLIMETRE_PER_HOUR, "", "", false),
         WIND_SPEED(0, 160, 1.8, SIUnits.KILOMETRE_PER_HOUR, "", "", false),
         WIND_ANGLE(0, 360, 5, Units.DEGREE_ANGLE, "", "", false),
@@ -120,7 +120,6 @@ public class NetatmoConstants {
 
     // Netatmo API urls
     public static final String URL_API = "https://api.netatmo.com/";
-    public static final String URL_APP = "https://app.netatmo.net/";
     public static final String PATH_OAUTH = "oauth2";
     public static final String SUB_PATH_TOKEN = "token";
     public static final String SUB_PATH_AUTHORIZE = "authorize";
@@ -159,6 +158,7 @@ public class NetatmoConstants {
 
     // Payloads
     public static final String PAYLOAD_FLOODLIGHT = "{\"home\": {\"id\":\"%s\",\"modules\": [ {\"id\":\"%s\",\"floodlight\":\"%s\"} ]}}";
+    public static final String PAYLOAD_SIREN_PRESENCE = "{\"home\": {\"id\":\"%s\",\"modules\": [ {\"id\":\"%s\",\"siren_status\":\"%s\"} ]}}";
     public static final String PAYLOAD_PERSON_AWAY = "{\"home_id\":\"%s\",\"person_id\":\"%s\"}";
     public static final String PAYLOAD_PERSON_HOME = "{\"home_id\":\"%s\",\"person_ids\":[\"%s\"]}";
 
@@ -198,10 +198,13 @@ public class NetatmoConstants {
         WRITE_DOORBELL,
         @SerializedName("access_doorbell")
         ACCESS_DOORBELL,
+        @SerializedName("read_carbonmonoxidedetector")
+        READ_CARBONMONOXIDEDETECTOR,
         UNKNOWN;
     }
 
     private static final Scope[] SMOKE_SCOPES = { Scope.READ_SMOKEDETECTOR };
+    private static final Scope[] CARBON_MONOXIDE_SCOPES = { Scope.READ_CARBONMONOXIDEDETECTOR };
     private static final Scope[] AIR_CARE_SCOPES = { Scope.READ_HOMECOACH };
     private static final Scope[] WEATHER_SCOPES = { Scope.READ_STATION };
     private static final Scope[] THERMOSTAT_SCOPES = { Scope.READ_THERMOSTAT, Scope.WRITE_THERMOSTAT };
@@ -213,7 +216,7 @@ public class NetatmoConstants {
         AIR_CARE(AIR_CARE_SCOPES),
         WEATHER(WEATHER_SCOPES),
         ENERGY(THERMOSTAT_SCOPES),
-        SECURITY(WELCOME_SCOPES, PRESENCE_SCOPES, SMOKE_SCOPES, DOORBELL_SCOPES),
+        SECURITY(WELCOME_SCOPES, PRESENCE_SCOPES, SMOKE_SCOPES, DOORBELL_SCOPES, CARBON_MONOXIDE_SCOPES),
         NONE();
 
         public static String ALL_SCOPES = EnumSet.allOf(FeatureArea.class).stream().map(fa -> fa.scopes)
@@ -344,6 +347,20 @@ public class NetatmoConstants {
         @SerializedName("2")
         ALIM_CORRECT_POWER,
         UNKNOWN;
+    }
+
+    public enum SirenStatus {
+        SOUND,
+        NO_SOUND,
+        UNKNOWN;
+
+        public static SirenStatus get(String value) {
+            try {
+                return valueOf(value.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                return UNKNOWN;
+            }
+        }
     }
 
     public enum BatteryState {

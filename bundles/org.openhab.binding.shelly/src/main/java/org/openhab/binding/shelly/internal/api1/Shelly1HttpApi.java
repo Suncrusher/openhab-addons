@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2022 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -49,6 +49,7 @@ import org.openhab.binding.shelly.internal.api1.Shelly1ApiJsonDTO.ShellyShortLig
 import org.openhab.binding.shelly.internal.api1.Shelly1ApiJsonDTO.ShellyStatusLight;
 import org.openhab.binding.shelly.internal.api1.Shelly1ApiJsonDTO.ShellyStatusRelay;
 import org.openhab.binding.shelly.internal.api1.Shelly1ApiJsonDTO.ShellyStatusSensor;
+import org.openhab.binding.shelly.internal.api1.Shelly1ApiJsonDTO.ShellyThermnostat;
 import org.openhab.binding.shelly.internal.config.ShellyThingConfiguration;
 import org.openhab.binding.shelly.internal.handler.ShellyThingInterface;
 import org.openhab.core.library.unit.ImperialUnits;
@@ -89,7 +90,9 @@ public class Shelly1HttpApi extends ShellyHttpClient implements ShellyApiInterfa
 
     @Override
     public ShellySettingsDevice getDeviceInfo() throws ShellyApiException {
-        return callApi(SHELLY_URL_DEVINFO, ShellySettingsDevice.class);
+        ShellySettingsDevice info = callApi(SHELLY_URL_DEVINFO, ShellySettingsDevice.class);
+        info.gen = 1;
+        return info;
     }
 
     @Override
@@ -171,8 +174,12 @@ public class Shelly1HttpApi extends ShellyHttpClient implements ShellyApiInterfa
 
     @Override
     public void setRelayTurn(int id, String turnMode) throws ShellyApiException {
-        callApi(getControlUriPrefix(id) + "?" + SHELLY_LIGHT_TURN + "=" + turnMode.toLowerCase(),
-                ShellyShortLightStatus.class);
+        callApi(getControlUriPrefix(id) + "?" + SHELLY_LIGHT_TURN + "=" + turnMode.toLowerCase(), String.class);
+    }
+
+    @Override
+    public void resetMeterTotal(int id) throws ShellyApiException {
+        callApi(SHELLY_URL_STATUS_EMETER + "/" + id + "?reset_totals=true", ShellyStatusRelay.class);
     }
 
     @Override
@@ -240,7 +247,7 @@ public class Shelly1HttpApi extends ShellyHttpClient implements ShellyApiInterfa
         } else if (profile.isLight) {
             type = SHELLY_CLASS_LIGHT;
         }
-        String uri = SHELLY_URL_SETTINGS + "/" + type + "/" + index + "?" + timerName + "=" + (int) value;
+        String uri = SHELLY_URL_SETTINGS + "/" + type + "/" + index + "?" + timerName + "=" + value;
         httpRequest(uri);
     }
 
@@ -257,7 +264,7 @@ public class Shelly1HttpApi extends ShellyHttpClient implements ShellyApiInterfa
     @Override
     public void setValveMode(int valveId, boolean auto) throws ShellyApiException {
         String uri = "/settings/thermostat/" + valveId + "?target_t_enabled=" + (auto ? "1" : "0");
-        if (auto) {
+        if (auto && profile.settings.thermostats != null) {
             uri = uri + "&target_t=" + getDouble(profile.settings.thermostats.get(0).targetTemp.value);
         }
         httpRequest(uri); // percentage to open the valve
@@ -281,12 +288,15 @@ public class Shelly1HttpApi extends ShellyHttpClient implements ShellyApiInterfa
 
     @Override
     public void startValveBoost(int valveId, int value) throws ShellyApiException {
-        int minutes = value != -1 ? value : getInteger(profile.settings.thermostats.get(0).boostMinutes);
-        httpRequest("/thermostat/0?boost_minutes=" + minutes);
+        if (profile.settings.thermostats != null) {
+            ShellyThermnostat t = profile.settings.thermostats.get(0);
+            int minutes = value != -1 ? value : getInteger(t.boostMinutes);
+            httpRequest("/thermostat/0?boost_minutes=" + minutes);
+        }
     }
 
     @Override
-    public void setLedStatus(String ledName, Boolean value) throws ShellyApiException {
+    public void setLedStatus(String ledName, boolean value) throws ShellyApiException {
         httpRequest(SHELLY_URL_SETTINGS + "?" + ledName + "=" + (value ? SHELLY_API_TRUE : SHELLY_API_FALSE));
     }
 
@@ -459,7 +469,7 @@ public class Shelly1HttpApi extends ShellyHttpClient implements ShellyApiInterfa
     }
 
     /**
-     * Sends a IR key code to the Shelly Sense.
+     * Sends an IR key code to the Shelly Sense.
      *
      * @param keyCode A keyCoud could be a symbolic name (as defined in the key map on the device) or a PRONTO Code in
      *            plain or hex64 format
@@ -525,6 +535,11 @@ public class Shelly1HttpApi extends ShellyHttpClient implements ShellyApiInterfa
         } else if (profile.isLight) {
             setEventUrls(0);
         }
+    }
+
+    @Override
+    public void muteSmokeAlarm(int id) throws ShellyApiException {
+        throw new ShellyApiException("Request not supported");
     }
 
     /**
@@ -738,5 +753,9 @@ public class Shelly1HttpApi extends ShellyHttpClient implements ShellyApiInterfa
 
     @Override
     public void close() {
+    }
+
+    @Override
+    public void startScan() {
     }
 }

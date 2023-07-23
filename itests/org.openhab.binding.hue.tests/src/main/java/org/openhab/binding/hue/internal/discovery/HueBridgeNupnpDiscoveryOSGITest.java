@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2022 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -15,7 +15,8 @@ package org.openhab.binding.hue.internal.discovery;
 import static org.hamcrest.CoreMatchers.*;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.openhab.binding.hue.internal.HueBindingConstants.THING_TYPE_BRIDGE;
+import static org.mockito.Mockito.mock;
+import static org.openhab.binding.hue.internal.HueBindingConstants.*;
 import static org.openhab.core.config.discovery.inbox.InboxPredicates.forThingTypeUID;
 
 import java.io.IOException;
@@ -25,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.eclipse.jdt.annotation.NonNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.openhab.core.config.discovery.DiscoveryListener;
@@ -33,11 +35,11 @@ import org.openhab.core.config.discovery.DiscoveryService;
 import org.openhab.core.config.discovery.inbox.Inbox;
 import org.openhab.core.test.java.JavaOSGiTest;
 import org.openhab.core.test.storage.VolatileStorageService;
+import org.openhab.core.thing.ThingRegistry;
 import org.openhab.core.thing.ThingTypeUID;
 import org.openhab.core.thing.ThingUID;
 
 /**
- *
  * @author Christoph Knauf - Initial contribution
  * @author Markus Rathgeb - migrated to plain Java test
  */
@@ -51,64 +53,18 @@ public class HueBridgeNupnpDiscoveryOSGITest extends JavaOSGiTest {
     final ThingTypeUID BRIDGE_THING_TYPE_UID = new ThingTypeUID("hue", "bridge");
     final String ip1 = "192.168.31.17";
     final String ip2 = "192.168.30.28";
-    final String sn1 = "00178820057f";
-    final String sn2 = "001788141b41";
+    final String sn1 = "001788fffe20057f";
+    final String sn2 = "001788fffe141b41";
     final ThingUID BRIDGE_THING_UID_1 = new ThingUID(BRIDGE_THING_TYPE_UID, sn1);
     final ThingUID BRIDGE_THING_UID_2 = new ThingUID(BRIDGE_THING_TYPE_UID, sn2);
-    final String validBridgeDiscoveryResult = "[{\"id\":\"001788fffe20057f\",\"internalipaddress\":" + ip1
-            + "},{\"id\":\"001788fffe141b41\",\"internalipaddress\":" + ip2 + "}]";
+    final String validBridgeDiscoveryResult = "[{\"id\":\"" + sn1 + "\",\"internalipaddress\":" + ip1 + "},{\"id\":\""
+            + sn2 + "\",\"internalipaddress\":" + ip2 + "}]";
     String discoveryResult;
-    String expBridgeDescription = "" + //
-            "<?xml version=\"1.0\"?>" + //
-            "<root xmlns=\"urn:schemas-upnp-org:device-1-0\">" + //
-            "  <specVersion>" + //
-            "    <major>1</major>" + //
-            "    <minor>0</minor>" + //
-            "  </specVersion>" + //
-            "  <URLBase>http://$IP:80/</URLBase>" + //
-            "  <device>" + //
-            "    <deviceType>urn:schemas-upnp-org:device:Basic:1</deviceType>" + //
-            "    <friendlyName>Philips hue ($IP)</friendlyName>" + //
-            "    <manufacturer>Royal Philips Electronics</manufacturer>" + //
-            "    <manufacturerURL>http://www.philips.com</manufacturerURL>" + //
-            "<modelDescription>Philips hue Personal Wireless Lighting</modelDescription>" + //
-            "<modelName>Philips hue bridge 2012</modelName>" + //
-            "<modelNumber>1000000000000</modelNumber>" + //
-            "<modelURL>http://www.meethue.com</modelURL>" + //
-            "    <serialNumber>93eadbeef13</serialNumber>" + //
-            "    <UDN>uuid:01234567-89ab-cdef-0123-456789abcdef</UDN>" + //
-            "    <serviceList>" + //
-            "      <service>" + //
-            "        <serviceType>(null)</serviceType>" + //
-            "        <serviceId>(null)</serviceId>" + //
-            "        <controlURL>(null)</controlURL>" + //
-            "        <eventSubURL>(null)</eventSubURL>" + //
-            "        <SCPDURL>(null)</SCPDURL>" + //
-            "      </service>" + //
-            "    </serviceList>" + //
-            "    <presentationURL>index.html</presentationURL>" + //
-            "    <iconList>" + //
-            "      <icon>" + //
-            "        <mimetype>image/png</mimetype>" + //
-            "        <height>48</height>" + //
-            "        <width>48</width>" + //
-            "        <depth>24</depth>" + //
-            "        <url>hue_logo_0.png</url>" + //
-            "      </icon>" + //
-            "      <icon>" + //
-            "        <mimetype>image/png</mimetype>" + //
-            "        <height>120</height>" + //
-            "        <width>120</width>" + //
-            "        <depth>24</depth>" + //
-            "        <url>hue_logo_3.png</url>" + //
-            "      </icon>" + //
-            "    </iconList>" + //
-            "  </device>" + //
-            "</root>";
+    String expBridgeDescription = "{\"name\":\"Philips hue\",\"datastoreversion\":\"149\",\"swversion\":\"1957113050\",\"apiversion\":\"1.57.0\",\"mac\":\"00:11:22:33:44\",\"bridgeid\":\"$SN\",\"factorynew\":false,\"replacesbridgeid\":null,\"modelid\":\"BSB002\",\"starterkitid\":\"\"}";
 
     private void checkDiscoveryResult(DiscoveryResult result, String expIp, String expSn) {
         assertThat(result.getBridgeUID(), nullValue());
-        assertThat(result.getLabel(), is(HueBridgeNupnpDiscovery.LABEL_PATTERN.replace("IP", expIp)));
+        assertThat(result.getLabel(), is(String.format(DISCOVERY_LABEL_PATTERN, expIp)));
         assertThat(result.getProperties().get("ipAddress"), is(expIp));
         assertThat(result.getProperties().get("serialNumber"), is(expSn));
     }
@@ -127,16 +83,25 @@ public class HueBridgeNupnpDiscoveryOSGITest extends JavaOSGiTest {
 
     // Mock class which only overrides the doGetRequest method in order to make the class testable
     class ConfigurableBridgeNupnpDiscoveryMock extends HueBridgeNupnpDiscovery {
+        public ConfigurableBridgeNupnpDiscoveryMock(ThingRegistry thingRegistry) {
+            super(thingRegistry);
+        }
+
         @Override
         protected String doGetRequest(String url) throws IOException {
             if (url.contains("meethue")) {
                 return discoveryResult;
             } else if (url.contains(ip1)) {
-                return expBridgeDescription.replaceAll("$IP", ip1);
+                return expBridgeDescription.replaceAll("$SN", sn1);
             } else if (url.contains(ip2)) {
-                return expBridgeDescription.replaceAll("$IP", ip2);
+                return expBridgeDescription.replaceAll("$SN", sn2);
             }
             throw new IOException();
+        }
+
+        @Override
+        protected boolean isClip2Supported(@NonNull String ipAddress) {
+            return false;
         }
     }
 
@@ -155,8 +120,8 @@ public class HueBridgeNupnpDiscoveryOSGITest extends JavaOSGiTest {
 
     @Test
     public void bridgeThingTypeIsSupported() {
-        assertThat(sut.getSupportedThingTypes().size(), is(1));
-        assertThat(sut.getSupportedThingTypes().iterator().next(), is(THING_TYPE_BRIDGE));
+        assertThat(sut.getSupportedThingTypes().size(), is(2));
+        assertThat(sut.getSupportedThingTypes().contains(THING_TYPE_BRIDGE), is(true));
     }
 
     @Test
@@ -167,7 +132,7 @@ public class HueBridgeNupnpDiscoveryOSGITest extends JavaOSGiTest {
             inbox.remove(oldResult.getThingUID());
         }
 
-        sut = new ConfigurableBridgeNupnpDiscoveryMock();
+        sut = new ConfigurableBridgeNupnpDiscoveryMock(mock(ThingRegistry.class));
         registerService(sut, DiscoveryService.class.getName());
         discoveryResult = validBridgeDiscoveryResult;
         final Map<ThingUID, DiscoveryResult> results = new HashMap<>();
@@ -216,7 +181,7 @@ public class HueBridgeNupnpDiscoveryOSGITest extends JavaOSGiTest {
             inbox.remove(oldResult.getThingUID());
         }
 
-        sut = new ConfigurableBridgeNupnpDiscoveryMock();
+        sut = new ConfigurableBridgeNupnpDiscoveryMock(mock(ThingRegistry.class));
         registerService(sut, DiscoveryService.class.getName());
         final Map<ThingUID, DiscoveryResult> results = new HashMap<>();
         registerDiscoveryListener(new DiscoveryListener() {

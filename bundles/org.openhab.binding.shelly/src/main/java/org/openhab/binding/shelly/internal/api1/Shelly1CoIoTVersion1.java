@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2022 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -149,7 +149,7 @@ public class Shelly1CoIoTVersion1 extends Shelly1CoIoTProtocol implements Shelly
                         break;
                     case "current":
                         updateChannel(updates, rGroup, CHANNEL_EMETER_CURRENT,
-                                toQuantityType(getDouble(s.value), DIGITS_VOLT, Units.AMPERE));
+                                toQuantityType(getDouble(s.value), DIGITS_AMPERE, Units.AMPERE));
                         break;
                     case "pf":
                         updateChannel(updates, rGroup, CHANNEL_EMETER_PFACTOR, getDecimal(s.value));
