@@ -13,9 +13,8 @@
 package org.openhab.binding.hue.internal.dto.clip2;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
+import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.hue.internal.dto.clip2.enums.ButtonEventType;
-import org.openhab.core.library.types.StringType;
-import org.openhab.core.types.State;
 
 import com.google.gson.annotations.SerializedName;
 
@@ -26,17 +25,30 @@ import com.google.gson.annotations.SerializedName;
  */
 @NonNullByDefault
 public class Button {
-    private @NonNullByDefault({}) @SerializedName("last_event") String lastEvent;
+    private @Nullable @SerializedName("last_event") String lastEvent;
+    private @Nullable @SerializedName("button_report") ButtonReport buttonReport;
+    private @SerializedName("repeat_interval") int repeatInterval;
 
     /**
-     * @return the last button event as an enum.
-     * @throws IllegalArgumentException if lastEvent is bad.
+     * The underlying field is deprecated in the CLIP 2 API.
+     * Moved to button_report/event
+     *
+     * @return the last button event as an enum (null if none or invalid).
      */
-    public ButtonEventType getLastEvent() throws IllegalArgumentException {
-        return ButtonEventType.valueOf(lastEvent.toUpperCase());
+    public @Nullable ButtonEventType getLastEvent() {
+        String lastEvent = this.lastEvent;
+        if (lastEvent == null) {
+            return null;
+        }
+
+        try {
+            return ButtonEventType.valueOf(lastEvent.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
-    public State getLastEventState() {
-        return new StringType(getLastEvent().name());
+    public @Nullable ButtonReport getButtonReport() {
+        return buttonReport;
     }
 }
