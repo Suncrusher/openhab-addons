@@ -49,14 +49,17 @@ _Note that it is planned to generate some part of this based on the XML files wi
 
 ### `optical` Thing Configuration
 
-| Name            | Type    | Description                           | Default | Required | Advanced |
-|-----------------|---------|---------------------------------------|---------|----------|----------|
-| port            | text    | Serial port to interface the device   | N/A     | yes      | no       |
-| userId          | integer | userId to access the device           | N/A     | no       | no       |
-| username        | text    | Username to access the device         | N/A     | no       | no       |
-| password        | text    | Password to access the device         | N/A     | yes      | no       |
-| refreshInterval | integer | Interval the device is polled in sec. | 2       | no       | no       |
-| logoffInterval  | integer | Interval that the connection is logoff| 900     | no       | no       |
+| Name               | Type    | Description                           | Default | Required | Advanced |
+|--------------------|---------|---------------------------------------|---------|----------|----------|
+| port               | text    | Serial port to interface the device   | N/A     | yes      | no       |
+| userId             | integer | userId to access the device           | N/A     | no       | no       |
+| username           | text    | Username to access the device         | N/A     | no       | no       |
+| password           | text    | Password to access the device         | N/A     | yes      | no       |
+| refreshInterval    | integer | Interval the device is polled in sec. | 2       | no       | no       |
+| logoffInterval     | integer | Interval that the connection is logoff| 900     | no       | no       |
+| idleStartTime      | text    | Logon will not be attempted after this time and until the idle seconds has elapsed | 02:10     | no       | no       |
+| idleSeconds        | integer | Seconds that the binding will idle every day after the idle start time | 480     | no       | no       |
+
 
 ## Channels
 
