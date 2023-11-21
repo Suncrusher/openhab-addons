@@ -77,6 +77,32 @@ _Provide a full usage example based on textual configuration files._
 _*.things, *.items examples are mandatory as textual configuration is well used by many users._
 _*.sitemap examples are optional._
 
+### Thing Configuration
+
+```java
+Thing smartmeterosgp:optical:nrgi_meter [ port="/dev/ttyUSB1", password="1234567890abcdef0123", refreshInterval="5", logoffInterval="30" ]
+```
+
+### Item Configuration
+
+```java
+Number:Energy smartmeter_total_energy_usage  "Total enery usage [%s kWh]" ["Measurement", "Energy"] {channel="smartmeterosgp:optical:nrgi_meter:Fwd_active_energy"}
+Number:Power  smartmeter_current_power_usage "Current power usage" ["Measurement", "Power"] {channel="smartmeterosgp:optical:nrgi_meter:Fwd_active_power"}
+Number:ElectricCurrent   smartmeter_L1_current "L1 Current" {channel="smartmeterosgp:optical:nrgi_meter:L1_current"}
+Number:ElectricCurrent   smartmeter_L2_current "L2 Current" {channel="smartmeterosgp:optical:nrgi_meter:L2_current"}
+Number:ElectricCurrent   smartmeter_L3_current "L3 Current" {channel="smartmeterosgp:optical:nrgi_meter:L3_current"}
+Number:ElectricPotential smartmeter_L1_voltage "L1 Voltage" {channel="smartmeterosgp:optical:nrgi_meter:L1_voltage"}
+Number:ElectricPotential smartmeter_L2_voltage "L2 Voltage" {channel="smartmeterosgp:optical:nrgi_meter:L2_voltage"}
+Number:ElectricPotential smartmeter_L3_voltage "L3 Voltage" {channel="smartmeterosgp:optical:nrgi_meter:L3_voltage"}
+```
+
+### Sitemap Configuration
+
+```perl
+Optional Sitemap configuration goes here.
+Remove this section, if not needed.
+```
+
 ## Any custom content here!
 
 _Feel free to add additional sections for whatever you think should also be mentioned about your binding!_
