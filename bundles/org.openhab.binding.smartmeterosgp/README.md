@@ -49,14 +49,17 @@ _Note that it is planned to generate some part of this based on the XML files wi
 
 ### `optical` Thing Configuration
 
-| Name            | Type    | Description                           | Default | Required | Advanced |
-|-----------------|---------|---------------------------------------|---------|----------|----------|
-| port            | text    | Serial port to interface the device   | N/A     | yes      | no       |
-| userId          | integer | userId to access the device           | N/A     | no       | no       |
-| username        | text    | Username to access the device         | N/A     | no       | no       |
-| password        | text    | Password to access the device         | N/A     | yes      | no       |
-| refreshInterval | integer | Interval the device is polled in sec. | 2       | no       | no       |
-| logoffInterval  | integer | Interval that the connection is logoff| 900     | no       | no       |
+| Name               | Type    | Description                           | Default | Required | Advanced |
+|--------------------|---------|---------------------------------------|---------|----------|----------|
+| port               | text    | Serial port to interface the device   | N/A     | yes      | no       |
+| userId             | integer | userId to access the device           | N/A     | no       | no       |
+| username           | text    | Username to access the device         | N/A     | no       | no       |
+| password           | text    | Password to access the device         | N/A     | yes      | no       |
+| refreshInterval    | integer | Interval the device is polled in sec. | 2       | no       | no       |
+| logoffInterval     | integer | Interval that the connection is logoff| 900     | no       | no       |
+| idleStartTime      | text    | Logon will not be attempted after this time and until the idle seconds has elapsed | 02:10     | no       | no       |
+| idleSeconds        | integer | Seconds that the binding will idle every day after the idle start time | 480     | no       | no       |
+
 
 ## Channels
 
@@ -73,6 +76,32 @@ _Note that it is planned to generate some part of this based on the XML files wi
 _Provide a full usage example based on textual configuration files._
 _*.things, *.items examples are mandatory as textual configuration is well used by many users._
 _*.sitemap examples are optional._
+
+### Thing Configuration
+
+```java
+Thing smartmeterosgp:optical:nrgi_meter [ port="/dev/ttyUSB1", password="1234567890abcdef0123", refreshInterval="5", logoffInterval="30" ]
+```
+
+### Item Configuration
+
+```java
+Number:Energy smartmeter_total_energy_usage  "Total enery usage [%s kWh]" ["Measurement", "Energy"] {channel="smartmeterosgp:optical:nrgi_meter:Fwd_active_energy"}
+Number:Power  smartmeter_current_power_usage "Current power usage" ["Measurement", "Power"] {channel="smartmeterosgp:optical:nrgi_meter:Fwd_active_power"}
+Number:ElectricCurrent   smartmeter_L1_current "L1 Current" {channel="smartmeterosgp:optical:nrgi_meter:L1_current"}
+Number:ElectricCurrent   smartmeter_L2_current "L2 Current" {channel="smartmeterosgp:optical:nrgi_meter:L2_current"}
+Number:ElectricCurrent   smartmeter_L3_current "L3 Current" {channel="smartmeterosgp:optical:nrgi_meter:L3_current"}
+Number:ElectricPotential smartmeter_L1_voltage "L1 Voltage" {channel="smartmeterosgp:optical:nrgi_meter:L1_voltage"}
+Number:ElectricPotential smartmeter_L2_voltage "L2 Voltage" {channel="smartmeterosgp:optical:nrgi_meter:L2_voltage"}
+Number:ElectricPotential smartmeter_L3_voltage "L3 Voltage" {channel="smartmeterosgp:optical:nrgi_meter:L3_voltage"}
+```
+
+### Sitemap Configuration
+
+```perl
+Optional Sitemap configuration goes here.
+Remove this section, if not needed.
+```
 
 ## Any custom content here!
 

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2022 Contributors to the openHAB project
+ * Copyright (c) 2010-2023 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -19,6 +19,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -532,8 +534,19 @@ public class SmartMeterOSGPHandler extends BaseThingHandler {
         }
     }
 
+    public boolean isIdlePeriod(LocalTime time) {
+        LocalTime startTime = LocalTime.parse(config.idleStartTime);
+        LocalTime endTime = startTime.plusSeconds(config.idleSeconds);
+        if (startTime.compareTo(endTime) <= 0)
+            return time.compareTo(startTime) >= 0 && time.compareTo(endTime) < 0;
+        return !(time.compareTo(endTime) >= 0 && time.compareTo(startTime) < 0);
+    }
+
     public void pollStatus() {
         if (connectState == ConnectState.Init) {
+            if (isIdlePeriod(LocalDateTime.now().toLocalTime())) {
+                return;
+            }
             toggleControl = false;
 
             // This did not fix initial NACK that is received when first RequestID_Ident is send
