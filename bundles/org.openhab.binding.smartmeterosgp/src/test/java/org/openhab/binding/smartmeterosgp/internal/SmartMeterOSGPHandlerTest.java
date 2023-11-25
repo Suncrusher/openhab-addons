@@ -16,9 +16,12 @@ import static org.eclipse.jdt.annotation.Checks.requireNonNull;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.openhab.binding.smartmeterosgp.internal.SmartMeterOSGPBindingConstants.*;
 
@@ -39,7 +42,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.openhab.core.config.core.Configuration;
 import org.openhab.core.io.transport.serial.SerialPortEvent;
 import org.openhab.core.io.transport.serial.SerialPortManager;
+import org.openhab.core.library.types.QuantityType;
+import org.openhab.core.library.unit.Units;
+import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
+import org.openhab.core.thing.ThingUID;
 import org.openhab.core.thing.binding.ThingHandlerCallback;
 
 /**
@@ -161,6 +168,87 @@ public class SmartMeterOSGPHandlerTest {
         uut.inputStream = new ByteArrayInputStream(terminateReply);
         uut.outputStream = outputStream;
         assertNull(uut.receiveMsg());
+    }
+
+    @Test
+    void testHandleTable0Reply() throws InterruptedException, IOException {
+        SmartMeterOSGPHandler uut = new SmartMeterOSGPHandler(thingMock, mock(SerialPortManager.class));
+        // when(uut.inputStream.read()).thenReturn(0xEE,0,0x20,0,0,0x01,0,0x80,0x51);
+        // when(uut.inputStream.available()).thenReturn(8,7,6,5,4,3,2,1,0,0);
+        uut.inputStream = mock(InputStream.class);
+        uut.outputStream = outputStream;
+        when(uut.inputStream.read()).thenReturn(0xEE, 0x00, 0xC0, 0x01, 0x00, 0x38, 0x00, 0x00, 0x4F, 0x02, 0x2A, 0x88,
+                0x45, 0x4C, 0x4F, 0x4E, 0x02, 0x00, 0xFF, 0x0C, 0x01, 0x00, 0x0A, 0x0D, 0x02, 0x0C, 0x09, 0x04, 0xFF,
+                0xB5, 0xF1, 0x5F, 0x02, 0x1D, 0xF4, 0xF0, 0xCF, 0x07, 0xFF, 0xFF, 0xFF, 0xF8, 0xFF, 0xFF, 0xFF, 0x7F,
+                0xFC, 0xEF, 0x03, 0x04, 0x02, 0x70, 0xF4, 0xFF, 0xFF, 0xFF, 0xFF, 0xBF, 0xFE, 0x7B, 0x1F, 0x00, 0x8A,
+                0xB5).thenReturn(0xee, 0x00, 0xa0, 0x00, 0x00, 0x1b, 0x00, 0x00, 0x00, 0xe6, 0x80, 0x80, 0x01, 0x02,
+                        0x04, 0x60, 0x00, 0x00, 0x02, 0xff, 0xe6, 0xc6, 0x38, 0x0e, 0x89, 0xbc, 0x73, 0xb8, 0x63, 0x01,
+                        0x02, 0x02, 0xcd, 0x37, 0x82, -1);
+        when(uut.inputStream.available()).thenReturn(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 0, 0, 0).thenReturn(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0);
+
+        ByteBuffer buf = uut.receiveMsgAndCheckAck();
+        assertNotNull(buf);
+        assertArrayEquals(
+                new byte[] { 0x00, 0x00, 0x4F, 0x02, 0x2A, (byte) 0x88, 0x45, 0x4C, 0x4F, 0x4E, 0x02, 0x00, (byte) 0xFF,
+                        0x0C, 0x01, 0x00, 0x0A, 0x0D, 0x02, 0x0C, 0x09, 0x04, (byte) 0xFF, (byte) 0xB5, (byte) 0xF1,
+                        0x5F, 0x02, 0x1D, (byte) 0xF4, (byte) 0xF0, (byte) 0xCF, 0x07, (byte) 0xFF, (byte) 0xFF,
+                        (byte) 0xFF, (byte) 0xF8, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, 0x7F, (byte) 0xFC, (byte) 0xEF,
+                        0x03, 0x04, 0x02, 0x70, (byte) 0xF4, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
+                        (byte) 0xBF, (byte) 0xFE, 0x7B, 0x1F, 0x00, 0x00, 0x00, 0x00, (byte) 0xe6, (byte) 0x80,
+                        (byte) 0x80, 0x01, 0x02, 0x04, 0x60, 0x00, 0x00, 0x02, (byte) 0xff, (byte) 0xe6, (byte) 0xc6,
+                        0x38, 0x0e, (byte) 0x89, (byte) 0xbc, 0x73, (byte) 0xb8, 0x63, 0x01, 0x02, 0x02, (byte) 0xcd },
+                buf.array());
+
+        uut.setCallback(callbackMock);
+        if (buf != null)
+            uut.handleTable0Reply(buf);
+
+        // verify(callbackMock).statusUpdated(eq(thingMock),
+        // eq(new ThingStatusInfo(ThingStatus.ONLINE, ThingStatusDetail.NONE, null)));
+    }
+
+    @Test
+    void testHandleTable28Reply() throws InterruptedException, IOException {
+        SmartMeterOSGPHandler uut = new SmartMeterOSGPHandler(thingMock, mock(SerialPortManager.class));
+        byte[] readTable28Reply = { (byte) 0xEE, 0x00, 0x00, 0x00, 0x00, 0x2C, 0x00, 0x00, 0x28, (byte) 0xEF, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x74, 0x02, 0x00,
+                0x00, (byte) 0xBA, 0x01, 0x00, 0x00, 0x38, 0x01, 0x00, 0x00, 0x67, (byte) 0x94, 0x03, 0x00, 0x6E,
+                (byte) 0x96, 0x03, 0x00, (byte) 0xC2, (byte) 0x9A, 0x03, 0x00, 0x2F, (byte) 0x96, (byte) 0xC3 };
+        when(thingMock.getUID()).thenReturn(new ThingUID("te:s:t"));
+        uut.inputStream = new ByteArrayInputStream(readTable28Reply);
+        uut.outputStream = outputStream;
+        ByteBuffer buf = uut.receiveMsgAndCheckAck();
+        assertNotNull(buf);
+        uut.setCallback(callbackMock);
+        if (buf != null)
+            uut.handleTable28Reply(buf);
+
+        assertArrayEquals(new byte[] { ACK }, outputStream.toByteArray());
+
+        verify(callbackMock).stateUpdated(eq(new ChannelUID("te:s:t:" + CHANNEL_Fwd_active_power)),
+                eq(new QuantityType<>(239, Units.WATT)));
+
+        verify(callbackMock).stateUpdated(eq(new ChannelUID("te:s:t:" + CHANNEL_Rev_active_power)),
+                eq(new QuantityType<>(0, Units.WATT)));
+        verify(callbackMock).stateUpdated(eq(new ChannelUID("te:s:t:" + CHANNEL_Import_Reactive_VAr)),
+                eq(new QuantityType<>(0x14, Units.VAR)));
+        verify(callbackMock).stateUpdated(eq(new ChannelUID("te:s:t:" + CHANNEL_Export_Reactive_VAr)),
+                eq(new QuantityType<>(0, Units.VAR)));
+        verify(callbackMock).stateUpdated(eq(new ChannelUID("te:s:t:" + CHANNEL_L1_current)),
+                eq(new QuantityType<>(0.628, Units.AMPERE)));
+        verify(callbackMock).stateUpdated(eq(new ChannelUID("te:s:t:" + CHANNEL_L2_current)),
+                eq(new QuantityType<>(0.442, Units.AMPERE)));
+        verify(callbackMock).stateUpdated(eq(new ChannelUID("te:s:t:" + CHANNEL_L3_current)),
+                eq(new QuantityType<>(0.312, Units.AMPERE)));
+        verify(callbackMock).stateUpdated(eq(new ChannelUID("te:s:t:" + CHANNEL_L1_voltage)),
+                eq(new QuantityType<>(234.599, Units.VOLT)));
+        verify(callbackMock).stateUpdated(eq(new ChannelUID("te:s:t:" + CHANNEL_L2_voltage)),
+                eq(new QuantityType<>(235.118, Units.VOLT)));
+        verify(callbackMock).stateUpdated(eq(new ChannelUID("te:s:t:" + CHANNEL_L3_voltage)),
+                eq(new QuantityType<>(236.226, Units.VOLT)));
     }
 
     @Test
