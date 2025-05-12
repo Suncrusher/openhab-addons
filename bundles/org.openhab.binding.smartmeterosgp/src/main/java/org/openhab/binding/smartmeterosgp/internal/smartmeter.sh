@@ -18,7 +18,7 @@ log_message() {
     local message="$2"
     local timestamp
     timestamp=$(date "+%Y-%m-%d %H:%M:%S")
-    echo "[$timestamp] [$level] $message" >> smart_meter.log
+    echo "[$timestamp] [$level] $message" | tee -a smart_meter.log
 }
 
 log_debug() { log_message "DEBUG" "$1"; }
@@ -184,29 +184,6 @@ poll_status() {
     log_info "Device status updated: $parsed_data"
 }
 
-# === Concurrency Functions ===
-
-# Start polling in the background
-start_polling() {
-    log_info "Starting polling in the background..."
-    while true; do
-        poll_status
-        sleep "$REFRESH_INTERVAL"
-    done &
-    echo $! > polling_pid.txt
-}
-
-# Stop the polling process
-stop_polling() {
-    if [ -f polling_pid.txt ]; then
-        kill "$(cat polling_pid.txt)"
-        rm polling_pid.txt
-        log_info "Polling process stopped."
-    else
-        log_warn "No polling process found."
-    fi
-}
-
 # === Initialization and Main Logic ===
 
 # Initialize the device
@@ -223,6 +200,15 @@ initialize_device() {
     log_info "Device initialized successfully."
 }
 
+# Main execution loop
+run_polling() {
+    log_info "Starting the polling process..."
+    while true; do
+        poll_status
+        sleep "$REFRESH_INTERVAL"
+    done
+}
+
 # Start the script
 initialize_device
-start_polling
+run_polling
