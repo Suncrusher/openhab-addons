@@ -39,7 +39,7 @@ configure_serial_port() {
         log_error "Failed to configure serial port $port"
         return 1
     fi
-    log_info "Serial port $port configured successfully."
+    log_info "Serial port $port settings: $(stty -F $port)"
     return 0
 }
 
