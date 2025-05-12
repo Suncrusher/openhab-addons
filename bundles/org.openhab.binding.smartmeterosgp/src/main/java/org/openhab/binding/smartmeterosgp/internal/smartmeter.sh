@@ -7,8 +7,8 @@ REFRESH_INTERVAL=5               # Set the polling interval in seconds
 IDLE_START_TIME="20:00:00"       # Start of the idle period
 IDLE_SECONDS=3600                # Duration of the idle period in seconds
 DEVICE_PASSWORD="e329b0428c16c74c0125" # Password for authentication
-DEVICE_USER_ID="1"            # User ID for authentication
-DEVICE_USERNAME=""          # Username for authentication
+DEVICE_USER_ID="1"               # User ID for authentication
+DEVICE_USERNAME=""               # Username for authentication
 
 # === Logging Functions ===
 
@@ -58,18 +58,28 @@ send_to_serial_port() {
     return 0
 }
 
-# Read data from the serial port
+# Read data from the serial port and handle NULL bytes
 read_from_serial_port() {
     local port="$1"
     local timeout="$2"
 
     log_debug "Reading data from serial port $port..."
-    timeout "$timeout" cat "$port"
+    local raw_data
+    raw_data=$(timeout "$timeout" cat "$port")
+
     if [ $? -ne 0 ]; then
         log_error "Failed to read data from serial port $port"
         return 1
     fi
-    log_debug "Data read successfully."
+
+    # Check for NULL bytes and remove them
+    if echo "$raw_data" | grep -q $'\x0'; then
+        log_warn "NULL bytes detected in the received data. Removing NULL bytes..."
+        raw_data=$(echo "$raw_data" | tr -d '\0')
+    fi
+
+    log_debug "Data read successfully: $raw_data"
+    echo "$raw_data"
     return 0
 }
 
