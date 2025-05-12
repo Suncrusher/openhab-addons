@@ -1,20 +1,31 @@
 #!/bin/bash
 
 # === Constants ===
-# CRC16 polynomial (CRC16-CCITT)
 POLYNOM_CRC16_CCIT=0x8408
+SERIAL_PORT="/dev/ttyUSB0"
+REFRESH_INTERVAL=2
+LOGOFF_INTERVAL=$((9 * 60))  # 9 minutes
+IDLE_START_TIME="02:10:00"
+IDLE_SECONDS=$((8 * 60))  # 8 minutes
+DATA_FILE="data.txt"
+USER_ID=1
+USERNAME=""
+PASSWORD="e329b0428c16c74c0125"
 
-# === Configuration Parameters (from SmartMeterOSGPConfiguration) ===
-SERIAL_PORT="/dev/ttyUSB0"      # Serial port to use (e.g., /dev/ttyUSB0)
-USER_ID=1                       # User ID
-USERNAME=""                     # Username for authentication
-PASSWORD="e329b0428c16c74c0125" # Password for authentication
-REFRESH_INTERVAL=2              # Data refresh interval in seconds
-LOGOFF_INTERVAL=$((9 * 60))     # Logoff interval in seconds (9 minutes)
-IDLE_START_TIME="02:10:00"      # Idle start time (HH:MM:SS)
-IDLE_SECONDS=$((8 * 60))        # Idle duration in seconds (8 minutes)
+# Define headers based on SmartMeterOSGPBindingConstants.java
+HEADERS=("Fwd_active_energy" "Rev_active_energy" "Fwd_active_power" "Rev_active_power" \
+"Import_Reactive_VAr" "Export_Reactive_VAr" "L1_current" "L2_current" "L3_current" \
+"L1_voltage" "L2_voltage" "L3_voltage")
 
 # === Functions ===
+
+# Initialize CSV file with headers
+initialize_csv() {
+    if [ ! -f "$DATA_FILE" ]; then
+        echo "Initializing $DATA_FILE with headers..."
+        echo "${HEADERS[*]}" | tr ' ' ',' > "$DATA_FILE"
+    fi
+}
 
 # Parse time strings into seconds since midnight
 time_to_seconds() {
@@ -78,7 +89,7 @@ configure_serial_port() {
         exit 1
     fi
 
-    stty -F "$SERIAL_PORT" "$BAUD_RATE" cs"$DATA_BITS" -cstopb -parenb
+    stty -F "$SERIAL_PORT" 9600 cs8 -cstopb -parenb
     echo "Configured serial port $SERIAL_PORT."
 }
 
@@ -97,7 +108,7 @@ read_data() {
     read -t "$timeout" -u 3 data
     exec 3<&-
     if [ -n "$data" ]; then
-        echo "Received data: $data"
+        echo "$data"
     else
         echo "No data received within $timeout seconds."
     fi
@@ -155,32 +166,69 @@ poll_status() {
     read_data 5
 }
 
-# Start the main communication loop
-main() {
-    # Ensure the serial port exists
-    if [ ! -e "$SERIAL_PORT" ]; then
-        echo "Error: Serial port $SERIAL_PORT does not exist."
-        exit 1
+# Parse raw data into columns
+parse_data() {
+    local raw_data="$1"
+    # Simulated parsing logic (update this according to your data format)
+    local parsed_data=($(echo "$raw_data" | awk '{for (i=1; i<=NF; i++) print $i}'))
+
+    # Ensure parsed data matches headers
+    if [ "${#parsed_data[@]}" -ne "${#HEADERS[@]}" ]; then
+        echo "Error: Parsed data does not match expected column count."
+        return 1
     fi
 
-    # Configure the serial port
-    configure_serial_port
+    echo "${parsed_data[@]}"
+}
 
-    # Authenticate with the device
-    authenticate
+# Append parsed data to CSV file
+append_to_csv() {
+    local parsed_data=("$@")
+    echo "${parsed_data[*]}" | tr ' ' ',' >> "$DATA_FILE"
+}
 
-    # Poll periodically unless in idle period
+# Main function to read, parse, and save data
+main_loop() {
+    echo "Starting data collection..."
     while true; do
+        # Skip polling during idle period
         if is_idle_period; then
             echo "Device is in idle period. Skipping polling."
             sleep "$REFRESH_INTERVAL"
             continue
         fi
 
+        # Poll the device for data
         poll_status
+
+        # Read and process data
+        local raw_data
+        raw_data=$(read_data "$REFRESH_INTERVAL")
+        if [ -n "$raw_data" ]; then
+            echo "Raw Data: $raw_data"
+
+            local parsed_data
+            parsed_data=$(parse_data "$raw_data")
+            if [ $? -eq 0 ]; then
+                echo "Parsed Data: $parsed_data"
+                append_to_csv $parsed_data
+            fi
+        fi
+
         sleep "$REFRESH_INTERVAL"
     done
 }
 
-# Execute the main function
-main
+# === Script Execution ===
+
+# Initialize the CSV file
+initialize_csv
+
+# Configure the serial port
+configure_serial_port
+
+# Authenticate with the device
+authenticate
+
+# Start the main loop
+main_loop
