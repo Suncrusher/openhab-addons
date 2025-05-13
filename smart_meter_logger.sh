@@ -162,38 +162,62 @@ send_message() {
 wait_for_ack() {
     local tmp_file=$(mktemp)
     local received=0
-    local max_attempts=3
+    local max_attempts=5  # Erhöht auf 5 Versuche
+    local response_timeout=2  # Timeout in Sekunden für Antwort
     
     for ((attempt=1; attempt <= max_attempts; attempt++)); do
-        # Auf Antwort warten
-        dd if="$DEVICE" of="$tmp_file" bs=1 count=1 iflag=nonblock 2>/dev/null
+        # Auf Antwort warten - mit erhöhtem Timeout
+        # Versuche mehr als 1 Byte zu lesen (manche Meter senden längere Antworten)
+        log_message "Warte auf Antwort... (Versuch $attempt/$max_attempts)"
+        
+        # Warten und dann prüfen, ob Daten angekommen sind
+        sleep 0.5
+        
+        # Mehrere Bytes lesen, falls verfügbar
+        dd if="$DEVICE" of="$tmp_file" bs=1 count=10 iflag=nonblock 2>/dev/null
         
         if [[ -s "$tmp_file" ]]; then
-            local response=$(hexdump -v -e '1/1 "%02X"' "$tmp_file")
+            # Wenn Daten empfangen wurden, zeige ersten Byte und weitere Bytes im Debug
+            local first_byte=$(hexdump -v -e '1/1 "%02X"' -n 1 "$tmp_file")
+            local all_bytes=$(hexdump -v -e '1/1 "%02X "' "$tmp_file")
             
-            if [[ "$response" == "06" ]]; then  # ACK erhalten
-                log_message "ACK empfangen"
+            log_message "Antwort empfangen: $all_bytes (erster Byte: 0x$first_byte)"
+            
+            # Verschiedene mögliche ACK-Werte akzeptieren
+            if [[ "$first_byte" == "06" ]]; then  # Standard ACK
+                log_message "Standard ACK (0x06) empfangen"
                 rm -f "$tmp_file"
                 return 0
-            elif [[ "$response" == "15" ]]; then  # NACK erhalten
-                log_message "NACK empfangen, Versuch $attempt von $max_attempts"
+            elif [[ "$first_byte" == "15" ]]; then  # NACK erhalten
+                log_message "NACK (0x15) empfangen, Versuch $attempt von $max_attempts"
                 if [[ $attempt -lt $max_attempts ]]; then
-                    sleep 0.5
+                    sleep 1
                     continue
                 fi
-            elif [[ "$response" == "00" ]]; then  # Manchmal wird 0x00 als ACK akzeptiert
-                log_message "0x00 empfangen, wird als ACK akzeptiert"
+            elif [[ "$first_byte" == "00" || "$first_byte" == "FF" || "$first_byte" == "E5" ]]; then 
+                # Manche Zähler senden 0x00, 0xFF oder 0xE5 als Bestätigung
+                log_message "Alternative Bestätigung (0x$first_byte) empfangen, wird als ACK akzeptiert"
+                rm -f "$tmp_file"
+                return 0
+            elif [[ "$first_byte" == "$START_BYTE" ]]; then
+                # Der Zähler hat direkt mit einer vollständigen Antwort geantwortet
+                log_message "Vollständige Antwort erhalten (beginnt mit START_BYTE)"
                 rm -f "$tmp_file"
                 return 0
             else
-                log_message "Unerwartete Antwort: 0x$response"
+                log_message "Unerwartete Antwort: 0x$first_byte, versuche als ACK zu akzeptieren"
+                # Im Debug-Modus akzeptieren wir jede Antwort als Erfolg
+                if [[ "$DEBUG_SCAN" == "true" ]]; then
+                    rm -f "$tmp_file"
+                    return 0
+                fi
             fi
         else
             log_message "Keine Antwort erhalten, Versuch $attempt von $max_attempts"
         fi
         
-        # Pause vor dem nächsten Versuch
-        sleep 1
+        # Längere Pause vor dem nächsten Versuch
+        sleep $response_timeout
     done
     
     log_message "Keine ACK-Antwort nach $max_attempts Versuchen"
@@ -206,7 +230,14 @@ wait_for_ack() {
 _send_bytes() {
     local tmp_file=$(mktemp)
     
-    # Debug-Ausgabe in Logdatei
+    # Vor dem Senden Puffer leeren
+    if [[ "$OSTYPE" != "msys" && "$OSTYPE" != "cygwin" && "$OSTYPE" != "win32" ]]; then
+        # Unter Linux/Unix Puffer leeren
+        # Das hilft, verbleibende Daten zu entfernen, die die Kommunikation stören könnten
+        dd if="$DEVICE" iflag=nonblock of=/dev/null bs=1 count=1000 2>/dev/null || true
+    fi
+
+    # Debug-Ausgabe in Logdatei mit mehr Informationen
     echo -n "Sende: " | tee -a "$LOG_FILE"
     for byte in "$@"; do
         # Sicherstellen, dass der Wert eine Zahl ist (keine Hex-Strings wie 0xNN)
@@ -226,6 +257,28 @@ _send_bytes() {
     done
     echo "" | tee -a "$LOG_FILE"
     
+    # Protokoll-Frames analysieren für bessere Debug-Informationen
+    if [[ $# -gt 3 ]]; then
+        local first_byte=$1
+        if [[ "$first_byte" == "0xee" || "$first_byte" == "238" ]]; then
+            # Frame-Analyse für Debug-Zwecke
+            local cmd_byte=${@:7:1}  # Kommando-Byte ist üblicherweise das 7. Byte
+            local cmd_type
+            case $cmd_byte in
+                "0x20"|"32") cmd_type="Ident-Request";;
+                "0x21"|"33") cmd_type="Terminate-Request";;
+                "0x30"|"48") cmd_type="Read-Table-Request";;
+                "0x3f"|"63") cmd_type="Read-Partial-Table-Request";;
+                "0x50"|"80") cmd_type="Logon-Request";;
+                "0x51"|"81") cmd_type="Security-Request";;
+                "0x52"|"82") cmd_type="Logoff-Request";;
+                "0x61"|"97") cmd_type="Negotiate2-Request";;
+                *) cmd_type="Unknown-Command";;
+            esac
+            log_message "Frame-Typ: $cmd_type" 
+        fi
+    fi
+
     # Daten senden basierend auf Betriebssystem
     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
         # Windows-kompatible Methode mit PowerShell
@@ -243,14 +296,16 @@ _send_bytes() {
         fi
     else 
         # Standard Linux/Unix Methode mit dd
+        log_message "Sende Daten an $DEVICE..."
         dd if="$tmp_file" of="$DEVICE" bs=1 count=$# 2>/dev/null
         sync
     fi
     
     rm -f "$tmp_file"
     
-    # Kurze Pause nach dem Senden
-    sleep 0.1
+    # Längere Pause nach dem Senden für zuverlässigere Kommunikation
+    # Einige Smart Meter benötigen mehr Zeit für die Verarbeitung
+    sleep 0.3
 }
 
 # Hilfsfunktion zum Umwandeln eines Strings in Hex-Bytes
@@ -853,34 +908,65 @@ scan_all_tables() {
     
     # Wake-up und Initialisierung
     log_message "Sende initiale Wake-up Sequenz für den Scan..."
-    for i in {1..5}; do
-        _send_bytes 0x55 0x55 0x55 0x55 0x55
-        sleep 0.3
+    for i in {1..8}; do
+        _send_bytes 0x55 0x55 0x55 0x55 0x55 0x55 0x55 0x55
+        sleep 0.5
     done
-    sleep 1
+    sleep 2
     
-    # Protokoll-Handshake durchführen
-    log_message "Initialisiere Verbindung zum Zähler..."
+    # Puffer gründlich leeren vor dem Handshake
+    dd if="$DEVICE" iflag=nonblock of=/dev/null bs=1 count=1000 2>/dev/null || true
+    sleep 0.5
     
-    # Ident, Negotiate, Logon, Security
-    if ! send_request_id $REQUEST_IDENT; then
-        log_message "FEHLER: Ident-Request fehlgeschlagen. Breche Scan ab."
-        return 1
-    fi
+    # Überprüfen Sie, ob wir den einfachen Scan-Modus verwenden sollen
+    local use_simple_mode="true"  # Auf "false" setzen, um vollständigen Protokoll-Handshake zu verwenden
     
-    if ! send_negotiate_request; then
-        log_message "FEHLER: Negotiate-Request fehlgeschlagen. Breche Scan ab."
-        return 1
-    fi
-    
-    if ! send_logon_request 0 "User"; then
-        log_message "FEHLER: Logon-Request fehlgeschlagen. Breche Scan ab."
-        return 1
-    fi
-    
-    if ! send_security_request "$PASSWORD"; then
-        log_message "FEHLER: Security-Request fehlgeschlagen. Breche Scan ab."
-        return 1
+    if [[ "$use_simple_mode" == "true" ]]; then
+        log_message "Verwende vereinfachten Scan-Modus ohne vollständigen Protokoll-Handshake..."
+        
+        # Einfachen Ident-Request senden, um zu prüfen, ob der Zähler reagiert
+        log_message "Sende Test-Ident-Request..."
+        _send_bytes $START_BYTE $IDENTITY_BYTE 0x00 0x00 0x01 0x00 $REQUEST_IDENT
+        
+        # Empfange Antwort und zeige alles was zurückkommt
+        local tmp_file=$(mktemp)
+        sleep 1
+        dd if="$DEVICE" of="$tmp_file" bs=1 count=100 iflag=nonblock 2>/dev/null
+        
+        if [[ -s "$tmp_file" ]]; then
+            log_message "Antwort auf Test-Ident-Request erhalten:"
+            hexdump -C "$tmp_file" | tee -a "$LOG_FILE"
+            echo "Debug-Antwort auf Test-Ident-Request:" >> "$scan_output"
+            hexdump -C "$tmp_file" >> "$scan_output"
+            echo "" >> "$scan_output"
+        else
+            log_message "WARNUNG: Keine Antwort auf Test-Ident-Request. Versuche trotzdem fortzufahren..."
+        fi
+        
+        rm -f "$tmp_file"
+        sleep 1
+        
+        log_message "Fahre mit vereinfachtem Scan-Modus fort..."
+    else
+        # Standard Protokoll-Handshake durchführen
+        log_message "Initialisiere Verbindung zum Zähler mit vollständigem Protokoll-Handshake..."
+        
+        # Ident, Negotiate, Logon, Security
+        if ! send_request_id $REQUEST_IDENT; then
+            log_message "FEHLER: Ident-Request fehlgeschlagen. Versuche trotzdem fortzufahren..."
+        else
+            if ! send_negotiate_request; then
+                log_message "FEHLER: Negotiate-Request fehlgeschlagen. Versuche trotzdem fortzufahren..."
+            else
+                if ! send_logon_request 0 "User"; then
+                    log_message "FEHLER: Logon-Request fehlgeschlagen. Versuche trotzdem fortzufahren..."
+                else
+                    if ! send_security_request "$PASSWORD"; then
+                        log_message "FEHLER: Security-Request fehlgeschlagen. Versuche trotzdem fortzufahren..."
+                    fi
+                fi
+            fi
+        fi
     fi
     
     # Wir scannen Tabellen von 0-50, was die meisten relevanten Tabellen abdecken sollte
@@ -903,15 +989,26 @@ scan_all_tables() {
         local table_hex=$(printf "%02X" $table)
         log_message "Scanne Tabelle $table_hex... [$scanned/$total_tables]"
         
-        # Sende Read Request für die Tabelle mit der neuen Protokoll-Implementierung
-        send_read_table $table
+        # Für vereinfachten Modus direkten Tabellenlesebefehl senden
+        log_message "Sende Read-Befehl für Tabelle $table_hex..."
         
-        # Empfange Antwort mit mehreren Versuchen
+        # Tabellen-ID als 2 Bytes
+        local table_low=$(( table & 0xFF ))
+        local table_high=$(( (table >> 8) & 0xFF ))
+        
+        # Direkten Read-Request senden (ähnlich wie in Java-Code)
+        _send_bytes $START_BYTE $IDENTITY_BYTE 0x00 0x00 0x03 0x00 $REQUEST_READ $table_low $table_high
+        
+        # Empfange Antwort mit mehreren Versuchen und längerer Wartezeit
         local scan_file=$(mktemp)
         local received=0
         
-        for attempt in {1..3}; do
-            dd if="$DEVICE" of="$scan_file" bs=1 count=512 iflag=nonblock 2>/dev/null
+        for attempt in {1..4}; do
+            # Längere Pause für die Antwort
+            sleep 1
+            
+            # Mehr Bytes lesen, um die komplette Antwort zu erhalten
+            dd if="$DEVICE" of="$scan_file" bs=1 count=1024 iflag=nonblock 2>/dev/null
             local file_size=$(stat -c %s "$scan_file" 2>/dev/null || echo "0")
             
             if [[ "$file_size" -gt 5 ]]; then
@@ -920,49 +1017,118 @@ scan_all_tables() {
             fi
             
             log_message "Versuch $attempt: Keine sofortige Antwort für Tabelle $table_hex, warte..."
-            sleep 0.5
+            # Längere Pause zwischen den Versuchen
+            sleep 1
         done
         
         if [[ $received -eq 1 && -s "$scan_file" ]]; then
             local file_size=$(stat -c %s "$scan_file")
             
+            # Zeige immer den kompletten Hex-Dump für Debug-Zwecke
+            log_message "Empfangene Daten für Tabelle $table_hex (${file_size} Bytes):"
+            hexdump -C "$scan_file" | tee -a "$LOG_FILE"
+            
             # Antwort analysieren
             # Prüfe ob es START_BYTE am Anfang hat
             local first_byte=$(hexdump -v -e '1/1 "%02X"' -s 0 -n 1 "$scan_file")
             
+            # Verbesserte Analyse mit mehr Informationen
             if [[ "$(printf '%02X' $START_BYTE)" == "$first_byte" ]]; then
-                # Gültiges Frame - Extrahiere Response-Code (Byte nach dem Header)
-                local resp_code=$(hexdump -v -e '1/1 "%u"' -s 6 -n 1 "$scan_file")
+                # Gültiges Frame - Versuche mehr Informationen zu extrahieren
+                # Auch wenn Protokollfehler vorliegen, versuchen wir Daten zu extrahieren
                 
-                if [[ "$resp_code" -eq 0 ]]; then
-                    # Acknowledge (0) - Daten gefunden
-                    log_message "Daten für Tabelle $table_hex gefunden (${file_size} Bytes)"
+                # Prüfe, ob genug Bytes für einen Protokoll-Header vorhanden sind
+                if [[ "$file_size" -gt 6 ]]; then
+                    local resp_code=$(hexdump -v -e '1/1 "%u"' -s 6 -n 1 "$scan_file")
                     
+                    # Versuche die Länge zu extrahieren (Bytes 4-5)
+                    local frame_len_low=$(hexdump -v -e '1/1 "%u"' -s 4 -n 1 "$scan_file")
+                    local frame_len_high=$(hexdump -v -e '1/1 "%u"' -s 5 -n 1 "$scan_file")
+                    local frame_len=$((frame_len_low + (frame_len_high << 8)))
+                    
+                    log_message "Frame-Analyse: Response-Code=$resp_code, Frame-Länge=$frame_len"
+                    
+                    # Auch bei Fehler-Codes versuchen wir Daten zu extrahieren
                     echo "----- TABELLE $table_hex: -----" >> "$scan_output"
                     echo "Bytes: $file_size" >> "$scan_output"
-                    echo "Response-Code: $resp_code (ACK)" >> "$scan_output"
-                    hexdump -C "$scan_file" >> "$scan_output"
-                    echo "" >> "$scan_output"
-                    data_found=$((data_found + 1))
+                    echo "Response-Code: $resp_code" >> "$scan_output"
+                    
+                    if [[ "$resp_code" -eq 0 ]]; then
+                        echo "Status: ACK (Daten verfügbar)" >> "$scan_output"
+                        data_found=$((data_found + 1))
+                        
+                        # Mehr Details zur Tabelle extrahieren
+                        if [[ "$table" -eq 0 ]]; then
+                            # Tabelle 0 enthält allgemeine Konfiguration, siehe SmartMeterOSGPHandler.java
+                            echo "Tabellentyp: General Configuration Table" >> "$scan_output"
+                        elif [[ "$table" -eq 23 ]]; then
+                            # Tabelle 23 enthält Energiewerte, siehe SmartMeterOSGPHandler.java:handleTable23Reply
+                            echo "Tabellentyp: Energy Table (Fwd_active_energy, Rev_active_energy)" >> "$scan_output"
+                            
+                            # Versuche Energiewerte zu extrahieren
+                            if [[ "$file_size" -gt 12 ]]; then
+                                # Die ersten 4 Bytes nach dem Header enthalten die Vorwärtsenergie
+                                local fwd_energy=$(hexdump -v -e '1/4 "%u"' -s 7 -n 4 "$scan_file")
+                                local fwd_kwh=$(echo "scale=3; $fwd_energy / 1000" | bc)
+                                echo "Vorwärts-Energie: $fwd_kwh kWh ($fwd_energy Wh)" >> "$scan_output"
+                                
+                                # Die nächsten 4 Bytes enthalten die Rückwärtsenergie
+                                if [[ "$file_size" -gt 16 ]]; then
+                                    local rev_energy=$(hexdump -v -e '1/4 "%u"' -s 11 -n 4 "$scan_file")
+                                    local rev_kwh=$(echo "scale=3; $rev_energy / 1000" | bc)
+                                    echo "Rückwärts-Energie: $rev_kwh kWh ($rev_energy Wh)" >> "$scan_output"
+                                fi
+                            fi
+                        elif [[ "$table" -eq 28 ]]; then
+                            # Tabelle 28 enthält Leistungswerte, siehe SmartMeterOSGPHandler.java:handleTable28Reply
+                            echo "Tabellentyp: Power Table (Fwd_active_power, currents, voltages)" >> "$scan_output"
+                            
+                            # Versuche Leistungswerte zu extrahieren
+                            if [[ "$file_size" -gt 12 ]]; then
+                                # Die ersten 4 Bytes nach dem Header enthalten die Vorwärtsleistung
+                                local fwd_power=$(hexdump -v -e '1/4 "%u"' -s 7 -n 4 "$scan_file")
+                                echo "Vorwärts-Leistung: $fwd_power W" >> "$scan_output"
+                            fi
+                        else
+                            echo "Tabellentyp: Unbekannt/Sonstige Tabelle" >> "$scan_output"
+                        fi
+                    else
+                        echo "Status: FEHLER (Code $resp_code)" >> "$scan_output"
+                    fi
                 else
-                    # Fehlercode
-                    log_message "Fehler $resp_code für Tabelle $table_hex erhalten"
-                    echo "TABELLE $table_hex: FEHLER (Code $resp_code)" >> "$scan_output"
-                    hexdump -C "$scan_file" >> "$scan_output"
-                    echo "" >> "$scan_output"
+                    log_message "Frame zu kurz für Protokoll-Header"
+                    echo "Status: UNGÜLTIGES FRAME (zu kurz)" >> "$scan_output"
                 fi
+                
+                # Immer den Hex-Dump für alle Antworten ausgeben
+                hexdump -C "$scan_file" >> "$scan_output"
+                echo "" >> "$scan_output"
             elif grep -q -a $'\x06' "$scan_file"; then
-                # Nur ACK, keine Daten
+                # ACK erhalten, aber keine Daten
                 log_message "Nur ACK für Tabelle $table_hex erhalten - keine Daten"
-                echo "TABELLE $table_hex: NUR ACK ERHALTEN (KEINE DATEN)" >> "$scan_output"
+                echo "----- TABELLE $table_hex: -----" >> "$scan_output"
+                echo "Status: NUR ACK ERHALTEN (KEINE DATEN)" >> "$scan_output"
+                hexdump -C "$scan_file" >> "$scan_output"
+                echo "" >> "$scan_output"
             elif grep -q -a $'\x15' "$scan_file"; then
                 # NACK erhalten
                 log_message "NACK für Tabelle $table_hex erhalten - Tabelle nicht verfügbar"
-                echo "TABELLE $table_hex: NICHT VERFÜGBAR (NACK)" >> "$scan_output"
+                echo "----- TABELLE $table_hex: -----" >> "$scan_output"
+                echo "Status: NICHT VERFÜGBAR (NACK)" >> "$scan_output"
+                hexdump -C "$scan_file" >> "$scan_output"
+                echo "" >> "$scan_output"
+            elif grep -q -a -E $'\xFF|\xE5|\x00' "$scan_file"; then
+                # Alternative Bestätigungen
+                log_message "Alternative Bestätigung für Tabelle $table_hex erhalten"
+                echo "----- TABELLE $table_hex: -----" >> "$scan_output"
+                echo "Status: ALTERNATIVE BESTÄTIGUNG" >> "$scan_output"
+                hexdump -C "$scan_file" >> "$scan_output"
+                echo "" >> "$scan_output"
             else
                 # Unbekanntes Format
                 log_message "Unbekannte Antwort für Tabelle $table_hex erhalten"
-                echo "TABELLE $table_hex: UNBEKANNTE ANTWORT" >> "$scan_output"
+                echo "----- TABELLE $table_hex: -----" >> "$scan_output"
+                echo "Status: UNBEKANNTE ANTWORT" >> "$scan_output"
                 hexdump -C "$scan_file" >> "$scan_output"
                 echo "" >> "$scan_output"
             fi
@@ -1045,7 +1211,7 @@ main() {
 
 # Kommandozeilenargumente verarbeiten
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
-    echo "Verwendung: $0 [--password PASSWORT] [--interval SEKUNDEN] [--output DATEI] [--scan] [--device GERÄT]"
+    echo "Verwendung: $0 [--password PASSWORT] [--interval SEKUNDEN] [--output DATEI] [--scan] [--direct-scan] [--device GERÄT]"
     echo ""
     echo "Optionen:"
     echo "  --password, -p PASSWORT  Das zu verwendende Passwort (Standard: 00000000)"
@@ -1053,6 +1219,8 @@ if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     echo "  --output, -o DATEI       Name der CSV-Ausgabedatei (Standard: smart_meter_data.csv)"
     echo "  --device, -d GERÄT       Serielles Gerät für die Kommunikation (Standard: /dev/ttyUSB0)"
     echo "  --scan, -s               Führt einen vollständigen Tabellenscan durch und beendet sich"
+    echo "  --direct-scan            Führt einen einfachen Scan mit minimalen Protokoll durch (für Problemdiagnose)"
+    echo "                           (alternativ: Verwende das separate Skript direct_scan.sh)"
     echo "  --help, -h               Diese Hilfe anzeigen"
     exit 0
 fi
@@ -1103,6 +1271,19 @@ while [[ $# -gt 0 ]]; do
         --scan|-s)
             DEBUG_SCAN=true
             echo "Tabellenscan-Modus aktiviert"
+            shift
+            ;;
+        --direct-scan)
+            echo "Direkter vereinfachter Scan-Modus aktiviert"
+            # Führe das separate Skript direct_scan.sh aus, wenn es existiert
+            if [[ -x "./direct_scan.sh" ]]; then
+                ./direct_scan.sh "$DEVICE"
+                exit 0
+            else
+                echo "Das Skript direct_scan.sh wurde nicht gefunden oder ist nicht ausführbar."
+                echo "Bitte stellen Sie sicher, dass es im aktuellen Verzeichnis existiert."
+                exit 1
+            fi
             shift
             ;;
         *)
