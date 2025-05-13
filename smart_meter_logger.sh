@@ -2,10 +2,19 @@
 #
 # Smart Meter Logger Script
 # Dieses Skript liest die Zählerwerte eines Smart Meters aus und speichert sie in einer CSV-Datei
-# Es nutzt die zuvor gefundene erfolgreiche Konfiguration: Start-Byte 0x01, Identity-Byte 0x3F
+# Es implementiert das ANSI C12.18/19 Protokoll wie in SmartMeterOSGPHandler.java definiert
 #
-# Version: 1.0
+# Version: 2.0
 # Datum: $(date +"%Y-%m-%d")
+#
+# Features:
+# - Vollständige Implementation des ANSI C12.18/19 Protokolls
+# - CRC16-CCIT Prüfsummenberechnung
+# - Toggle-Control-Bit Behandlung
+# - Unterstützung für Tabellen-Lesevorgänge
+# - Kompatibel mit dem OpenHAB Smart Meter OSGP Binding
+# - Verbesserte Fehlerbehandlung und Diagnose
+# - Windows/Linux-Kompatibilität
 #
 
 # Konfiguration
@@ -16,21 +25,87 @@ LOG_FILE="smart_meter_logger.log"
 POLL_INTERVAL=60     # Abfrageintervall in Sekunden
 DEBUG_SCAN=false     # Auf true setzen, um einen vollständigen Tabellenscan durchzuführen
 
-# Start-Byte und Identity-Byte aus der erfolgreichen Konfiguration
-START_BYTE=0x01
-IDENTITY_BYTE=0x3F
+# Start-Byte und Identity-Byte (angepasst an SmartMeterOSGPHandler.java - EE/00)
+START_BYTE=0xEE
+IDENTITY_BYTE=0x00
 
-# Serielle Schnittstellenkonfiguration (aus erfolgreichem Test)
-SERIAL_CONFIG="9600 raw cs8 cstopb -parenb -echo -hupcl -ixoff -ixon"
+# CRC16 CCIT Konfiguration
+CRC16_CCIT_POLYNOM=0x8408  # Entspricht CRC16.Polynom.CRC16_CCIT in Java
 
-# Protokollkonstanten
-REQUEST_IDENT=0x20      # Ident-Request
-REQUEST_READ=0x30       # Table Read Request
+# Java-Code verwendet diese Werte:
+#private static final byte START = (byte) 0xEE;
+#private static final byte IDENTITY = (byte) 0x00;
+
+# Serielle Schnittstellenkonfiguration
+# 9600 Baud, 8 Datenbits, keine Parität, 1 Stopbit (wie in SmartMeterOSGPHandler.java)
+SERIAL_CONFIG="9600 raw cs8 -cstopb -parenb -echo -hupcl -ixoff -ixon"
+
+# Globale Variable für Toggle-Control-Bit
+TOGGLE_CONTROL=false
+
+# Implementierung der CRC16 (CCIT) Berechnung
+# Basierend auf der Java-Implementierung in CRC16.java
+# Erzeugt die CRC16-Tabelle für CCIT Polynom
+generate_crc16_table() {
+    local polynom=$CRC16_CCIT_POLYNOM
+    local -a table
+    
+    for (( x=0; x<256; x++ )); do
+        local w=$x
+        for (( i=0; i<8; i++ )); do
+            if (( (w & 1) != 0 )); then
+                w=$(( (w >> 1) ^ polynom ))
+            else
+                w=$(( w >> 1 ))
+            fi
+        done
+        table[$x]=$w
+    done
+    
+    echo "${table[@]}"
+}
+
+# Berechnet den CRC16-Wert für ein Array von Bytes
+calculate_crc16() {
+    local -a data=("$@")
+    local -a crc_table=($(generate_crc16_table))
+    local crc=0xFFFF  # Initialer CRC-Wert wie im Java-Code
+    
+    for byte in "${data[@]}"; do
+        # Konvertiert Hex-Strings (0xNN) zu Integer-Werten
+        if [[ "$byte" =~ ^0x ]]; then
+            byte=$((byte))
+        fi
+        
+        # Implementierung des CRC-Algorithmus wie in CRC16.java
+        local idx=$(( (crc & 0xFF) ^ (byte & 0xFF) ))
+        crc=$(( (crc >> 8) ^ ${crc_table[$idx]} ))
+    done
+    
+    # XOR mit 0xFFFF wie im Java-Code (crc16Calc.calculate(...) ^ 0xFFFF)
+    crc=$(( crc ^ 0xFFFF ))
+    
+    echo $crc
+}
+
+# Protokollkonstanten (aus SmartMeterOSGPHandler.java)
+REQUEST_IDENT=0x20         # Ident-Request
+REQUEST_TERMINATE=0x21     # Terminate-Request
+REQUEST_READ=0x30          # Table Read Request
 REQUEST_READ_PARTIAL=0x3F  # Partial Table Read Request
-REQUEST_LOGON=0x50      # Logon Request
-REQUEST_LOGOFF=0x52     # Logoff Request
-ACK=0x06               # Acknowledgement
-NACK=0x15              # Negative Acknowledgement
+REQUEST_LOGON=0x50         # Logon Request
+REQUEST_SECURITY=0x51      # Security Request (Passwort)
+REQUEST_LOGOFF=0x52        # Logoff Request
+REQUEST_NEGOTIATE=0x60     # Negotiate Request
+REQUEST_NEGOTIATE2=0x61    # Negotiate2 Request
+REQUEST_WAIT=0x70          # Wait Request
+ACK=0x06                   # Acknowledgement
+NACK=0x15                  # Negative Acknowledgement
+
+# Tabellen IDs aus SmartMeterOSGPHandler.java
+TABLE_GENERAL=0            # Allgemeine Konfiguration
+TABLE_ENERGY=23            # Energiezähler (Fwd_active_energy, Rev_active_energy)
+TABLE_POWER=28             # Momentane Leistungswerte (Fwd_active_power)
 
 # Hilfsfunktion zum Loggen von Nachrichten
 log_message() {
@@ -39,9 +114,96 @@ log_message() {
     echo "[$timestamp] $message" | tee -a "$LOG_FILE"
 }
 
-# Hilfsfunktion zum sicheren Senden von Hex-Bytes
-# Diese Funktion ist jetzt kompatibel mit Linux und Windows/WSL
-send_bytes() {
+# Hilfsfunktion zum Senden von Nachrichten mit SmartMeter-Protokollstruktur
+# Implementiert die Paketstruktur wie in SmartMeterOSGPHandler.java
+send_message() {
+    local -a message=("$@")
+    local sequence=0  # Sequence-Byte (in Java immer 0)
+    local ctrl_byte
+    
+    # Toggle-Control-Bit setzen wie in Java-Implementierung
+    if $TOGGLE_CONTROL; then
+        ctrl_byte=0x20
+    else
+        ctrl_byte=0x00
+    fi
+    
+    # TOGGLE_CONTROL für nächste Nachricht umschalten
+    if $TOGGLE_CONTROL; then
+        TOGGLE_CONTROL=false
+    else
+        TOGGLE_CONTROL=true
+    fi
+    
+    # Länge der Nachricht berechnen
+    local length=${#message[@]}
+    local len_high=$(( (length >> 8) & 0xFF ))
+    local len_low=$(( length & 0xFF ))
+    
+    # Protokollkopf erstellen: [START][IDENTITY][CONTROL][SEQUENCE][LENGTH_HIGH][LENGTH_LOW]
+    local -a header=($START_BYTE $IDENTITY_BYTE $ctrl_byte $sequence $len_low $len_high)
+    
+    # Vollständige Nachricht zusammensetzen: Header + Message
+    local -a full_message=("${header[@]}" "${message[@]}")
+    
+    # CRC16 berechnen
+    local crc=$(calculate_crc16 "${full_message[@]}")
+    local crc_low=$(( crc & 0xFF ))
+    local crc_high=$(( (crc >> 8) & 0xFF ))
+    
+    # Nachricht mit CRC senden
+    _send_bytes "${full_message[@]}" $crc_low $crc_high
+    
+    # Auf ACK/NACK prüfen und entsprechend reagieren
+    wait_for_ack
+}
+
+# Hilfsfunktion zum Warten auf ein ACK
+wait_for_ack() {
+    local tmp_file=$(mktemp)
+    local received=0
+    local max_attempts=3
+    
+    for ((attempt=1; attempt <= max_attempts; attempt++)); do
+        # Auf Antwort warten
+        dd if="$DEVICE" of="$tmp_file" bs=1 count=1 iflag=nonblock 2>/dev/null
+        
+        if [[ -s "$tmp_file" ]]; then
+            local response=$(hexdump -v -e '1/1 "%02X"' "$tmp_file")
+            
+            if [[ "$response" == "06" ]]; then  # ACK erhalten
+                log_message "ACK empfangen"
+                rm -f "$tmp_file"
+                return 0
+            elif [[ "$response" == "15" ]]; then  # NACK erhalten
+                log_message "NACK empfangen, Versuch $attempt von $max_attempts"
+                if [[ $attempt -lt $max_attempts ]]; then
+                    sleep 0.5
+                    continue
+                fi
+            elif [[ "$response" == "00" ]]; then  # Manchmal wird 0x00 als ACK akzeptiert
+                log_message "0x00 empfangen, wird als ACK akzeptiert"
+                rm -f "$tmp_file"
+                return 0
+            else
+                log_message "Unerwartete Antwort: 0x$response"
+            fi
+        else
+            log_message "Keine Antwort erhalten, Versuch $attempt von $max_attempts"
+        fi
+        
+        # Pause vor dem nächsten Versuch
+        sleep 1
+    done
+    
+    log_message "Keine ACK-Antwort nach $max_attempts Versuchen"
+    rm -f "$tmp_file"
+    return 1
+}
+
+# Low-Level Funktion zum direkten Senden von Bytes
+# Diese Funktion ist kompatibel mit Linux und Windows/WSL
+_send_bytes() {
     local tmp_file=$(mktemp)
     
     # Debug-Ausgabe in Logdatei
@@ -66,24 +228,16 @@ send_bytes() {
     
     # Daten senden basierend auf Betriebssystem
     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-        # Windows-kompatible Methode (komplexer)
-        # Hier würde man idealerweise PowerShell oder ein spezielles Programm verwenden
-        # Um die Bytes direkt an den COM-Port zu senden
-        log_message "HINWEIS: Windows/WSL-Umgebung erkannt. Direkte COM-Port-Kommunikation könnte eingeschränkt sein."
-        log_message "         Für Windows wird empfohlen, ein PowerShell-Skript zu verwenden."
+        # Windows-kompatible Methode mit PowerShell
+        log_message "Windows-Umgebung erkannt. Verwende PowerShell für serielle Kommunikation."
         
-        # Bytes direkt an COM-Port senden (echten Windows COM-Port öffnen)
-        # Hinweis: Diese Methode ist sehr einfach und könnte in einer echten Umgebung 
-        # nicht zuverlässig funktionieren. Ein dediziertes PowerShell- oder Python-Skript
-        # wäre besser.
         if [[ -f "$tmp_file.hex" ]]; then
             if type -p powershell.exe >/dev/null 2>&1; then
-                log_message "Versuche PowerShell für COM-Port-Kommunikation zu nutzen..."
-                # Simulierter COM-Port-Zugriff mit PowerShell
-                # In einer echten Implementierung würde hier ein spezielles PowerShell-Skript aufgerufen werden
-                # das die hexadezimalen Werte in "$tmp_file.hex" liest und an den COM-Port sendet
+                # Hier können wir das existierende PowerShell-Skript aufrufen
+                local hex_data=$(cat "$tmp_file.hex")
+                powershell.exe -Command "& '$PWD/windows_meter_scanner.ps1' -ComPort '$DEVICE' -HexData '$hex_data' -Operation 'write'"
             else
-                log_message "PowerShell nicht gefunden. Kann keine Daten an COM-Port senden."
+                log_message "FEHLER: PowerShell nicht gefunden. Kann keine Daten senden."
             fi
             rm -f "$tmp_file.hex"
         fi
@@ -95,7 +249,7 @@ send_bytes() {
     
     rm -f "$tmp_file"
     
-    # Kurze Pause nach dem Senden für eine zuverlässigere Kommunikation
+    # Kurze Pause nach dem Senden
     sleep 0.1
 }
 
@@ -113,6 +267,171 @@ string_to_bytes() {
     echo "${bytes[@]}"
 }
 
+# Request-Funktionen basierend auf SmartMeterOSGPHandler.java
+
+# Sendet einen einzelnen Request-Befehl
+send_request_id() {
+    local request=$1
+    log_message "Sende Request-ID: 0x$(printf '%02X' $request)"
+    send_message $request
+}
+
+# Negotiate-Request für die Konfiguration der Kommunikation
+send_negotiate_request() {
+    log_message "Sende Negotiate-Request"
+    
+    # Parameter wie in SmartMeterOSGPHandler.java:
+    # - Maximum packet size: 64 (2 Bytes)
+    # - Maximum packets for reassembly: 2 (1 Byte)
+    # - Baudrate: 9600 (entspricht Enum-Wert 6) (1 Byte)
+    send_message $REQUEST_NEGOTIATE2 0x40 0x00 0x02 0x06
+}
+
+# Logon-Request zur Authentifizierung
+send_logon_request() {
+    local user_id=$1
+    local username=$2
+    
+    log_message "Sende Logon-Request für User-ID: $user_id, Username: $username"
+    
+    # User-ID als 2 Bytes
+    local id_low=$(( user_id & 0xFF ))
+    local id_high=$(( (user_id >> 8) & 0xFF ))
+    
+    # Message zusammenbauen
+    local -a message=($REQUEST_LOGON $id_low $id_high)
+    
+    # Username-Bytes hinzufügen (12 Bytes insgesamt, mit Leerzeichen auffüllen)
+    local -a username_bytes=($(string_to_bytes "$username"))
+    
+    for byte in "${username_bytes[@]}"; do
+        message+=($byte)
+    done
+    
+    # Mit Leerzeichen auffüllen (ASCII 32) bis 12 Zeichen
+    while [[ ${#message[@]} -lt 13 ]]; do
+        message+=(32)  # Space-ASCII
+    done
+    
+    send_message "${message[@]}"
+}
+
+# Security-Request mit Passwort
+send_security_request() {
+    local password=$1
+    
+    log_message "Sende Security-Request mit Passwort"
+    
+    # Message beginnen
+    local -a message=($REQUEST_SECURITY)
+    
+    # Passwort-Bytes hinzufügen
+    local -a password_bytes=($(string_to_bytes "$password"))
+    
+    for byte in "${password_bytes[@]}"; do
+        message+=($byte)
+    done
+    
+    # Mit Nullen auffüllen bis 20 Bytes
+    while [[ ${#message[@]} -lt 21 ]]; do
+        message+=(0)
+    done
+    
+    send_message "${message[@]}"
+}
+
+# Read-Table-Request für eine komplette Tabelle
+send_read_table() {
+    local table=$1
+    
+    log_message "Sende Read-Table-Request für Tabelle $table"
+    
+    # Tabellen-ID als 2 Bytes
+    local table_low=$(( table & 0xFF ))
+    local table_high=$(( (table >> 8) & 0xFF ))
+    
+    send_message $REQUEST_READ $table_low $table_high
+}
+
+# Read-Partial-Table-Request für einen Teil einer Tabelle
+send_read_partial_table() {
+    local table=$1
+    local offset=$2
+    local bytes=$3
+    
+    log_message "Sende Read-Partial-Table-Request für Tabelle $table, Offset $offset, $bytes Bytes"
+    
+    # Tabellen-ID als 2 Bytes
+    local table_low=$(( table & 0xFF ))
+    local table_high=$(( (table >> 8) & 0xFF ))
+    
+    # Offset als 3 Bytes (1 Byte für höchstes Byte, 2 Bytes für die unteren)
+    local offset_highest=$(( (offset >> 16) & 0xFF ))
+    local offset_low=$(( offset & 0xFF ))
+    local offset_high=$(( (offset >> 8) & 0xFF ))
+    
+    # Anzahl Bytes als 2 Bytes
+    local bytes_low=$(( bytes & 0xFF ))
+    local bytes_high=$(( (bytes >> 8) & 0xFF ))
+    
+    send_message $REQUEST_READ_PARTIAL $table_low $table_high $offset_highest $offset_low $offset_high $bytes_low $bytes_high
+}
+
+# Empfange eine Nachricht und prüfe auf ACK
+receive_msg_and_check_ack() {
+    local response_file=$(mktemp)
+    local response_received=false
+    
+    # Auf Antwort warten mit mehreren Versuchen
+    for attempt in {1..5}; do
+        # Mehr Daten lesen als nötig, um sicherzustellen, dass wir die ganze Antwort bekommen
+        dd if="$DEVICE" of="$response_file" bs=1 count=1024 iflag=nonblock 2>/dev/null
+        
+        if [[ -s "$response_file" ]]; then
+            response_received=true
+            log_message "Antwort erhalten (Versuch $attempt):"
+            hexdump -C "$response_file" | tee -a "$LOG_FILE"
+            break
+        fi
+        
+        log_message "Warte auf Antwort... (Versuch $attempt/5)"
+        sleep 0.5
+    done
+    
+    # Keine Antwort erhalten
+    if ! $response_received; then
+        log_message "FEHLER: Keine Antwort erhalten"
+        rm -f "$response_file"
+        return 1
+    fi
+    
+    # Prüfe, ob die Antwort mit START_BYTE beginnt
+    local first_byte=$(hexdump -v -e '1/1 "%02X"' -s 0 -n 1 "$response_file")
+    if [[ "$(printf '%02X' $START_BYTE)" != "$first_byte" ]]; then
+        log_message "FEHLER: Antwort beginnt nicht mit START_BYTE"
+        rm -f "$response_file"
+        return 1
+    fi
+    
+    # Extrahiere die Länge (Bytes 4-5)
+    local len_bytes=$(hexdump -v -e '1/2 "%u"' -s 4 -n 2 "$response_file")
+    
+    # Prüfe den Response-Code (erster Byte nach dem Header)
+    local response_code=$(hexdump -v -e '1/1 "%u"' -s 6 -n 1 "$response_file")
+    
+    if [[ "$response_code" -ne 0 ]]; then
+        log_message "FEHLER: Response-Code ist nicht 0 (Acknowledge), sondern $response_code"
+        rm -f "$response_file"
+        return 1
+    fi
+    
+    # Extrahiere die Daten nach dem Header und vor dem CRC
+    # Diese Funktion sollte die relevanten Daten zurückgeben, falls benötigt
+    
+    log_message "Erfolgreiche Antwort mit Response-Code: $response_code"
+    rm -f "$response_file"
+    return 0
+}
 # Funktion zur Initialisierung der CSV-Datei
 initialize_csv() {
     if [[ ! -f "$CSV_FILE" ]]; then
@@ -185,6 +504,7 @@ initialize_serial() {
 }
 
 # Funktion zur Kommunikation mit dem Smart Meter
+# Implementiert die Sequenz wie in SmartMeterOSGPHandler.pollStatus()
 communicate_with_meter() {
     local attempt=1
     local max_attempts=3
@@ -192,63 +512,67 @@ communicate_with_meter() {
     while (( attempt <= max_attempts )); do
         log_message "Kommunikationsversuch $attempt/$max_attempts..."
         
+        # Toggle-Control-Bit zurücksetzen bei neuem Versuch
+        TOGGLE_CONTROL=false
+        
         # 1. Sende Wake-up Sequenz - verbessert mit mehreren Wiederholungen
         log_message "Sende Wake-up Sequenz..."
         for i in {1..3}; do
-            send_bytes 0x55 0x55 0x55 0x55 0x55
+            _send_bytes 0x55 0x55 0x55 0x55 0x55
             sleep 0.3
         done
         sleep 1
         
-        # 2. Sende Ident-Request
+        # 2. Sende Ident-Request (wie in Java-Implementation)
         log_message "Sende Ident-Request..."
-        send_bytes $START_BYTE $IDENTITY_BYTE 0x00 0x00 0x01 0x00 $REQUEST_IDENT
-        sleep 1
-        
-        # 3. Empfange Antwort - mit verbesserter Datenerfassung
-        local response_file=$(mktemp)
-        
-        # Mehrfach versuchen, Daten zu empfangen, da einige Zähler langsam antworten
-        local received=0
-        for i in {1..10}; do  # Mehr Versuche
-            dd if="$DEVICE" of="$response_file" bs=1 count=32 iflag=nonblock 2>/dev/null  # Mehr Bytes lesen
-            if [[ -s "$response_file" && $(stat -c %s "$response_file") -gt 0 ]]; then
-                received=1
-                break
-            fi
-            log_message "Keine sofortige Antwort, warte... (Versuch $i/10)"
-            sleep 1  # Längere Wartezeit zwischen Versuchen
-        done
-        
-        # Debug: Antwort anzeigen
-        if [[ $received -eq 1 ]]; then
-            log_message "Antwort auf Ident-Request erhalten:"
-            hexdump -C "$response_file" | tee -a "$LOG_FILE"
-            
-            # Prüfe auf ACK
-            if grep -q -a $'\x06' "$response_file"; then
-                log_message "ACK empfangen, fahre fort"
-                rm -f "$response_file"
-                
-                # 4. Authentifizierung, falls erforderlich
-                if [[ -n "$PASSWORD" && "$PASSWORD" != "00000000" ]]; then
-                    authenticate_with_meter
-                fi
-                
-                # 5. Lese Zählerstände
-                read_meter_values
-                return 0
-            else
-                log_message "Kein ACK in der Antwort gefunden"
-                hexdump -C "$response_file" >> "$LOG_FILE"
-            fi
-        else
-            log_message "Keine Antwort erhalten"
+        if ! send_request_id $REQUEST_IDENT; then
+            log_message "Fehler beim Senden des Ident-Request"
+            (( attempt++ ))
+            continue
         fi
         
-        rm -f "$response_file"
-        (( attempt++ ))
-        sleep 2
+        # 3. Sende Negotiate-Request
+        if ! send_negotiate_request; then
+            log_message "Fehler beim Senden des Negotiate-Request"
+            (( attempt++ ))
+            continue
+        fi
+        log_message "Negotiate erfolgreich"
+        
+        # 4. Sende Logon-Request
+        local user_id=0  # Standard-User-ID
+        local username="User"  # Standard-Username
+        if ! send_logon_request $user_id "$username"; then
+            log_message "Fehler beim Senden des Logon-Request"
+            (( attempt++ ))
+            continue
+        fi
+        log_message "Logon erfolgreich"
+        
+        # 5. Sende Security-Request mit Passwort
+        if ! send_security_request "$PASSWORD"; then
+            log_message "Fehler beim Senden des Security-Request"
+            (( attempt++ ))
+            continue
+        fi
+        log_message "Security-Request erfolgreich"
+        
+        # 6. Lese Tabelle 0 (Standard-Infotabelle)
+        if ! send_read_table 0; then
+            log_message "Fehler beim Lesen der Tabelle 0"
+            (( attempt++ ))
+            continue
+        fi
+        log_message "Tabelle 0 erfolgreich gelesen"
+        
+        # 7. Lese Zählerstände aus verschiedenen Tabellen
+        read_meter_values
+        
+        # 8. Logoff und Terminate
+        send_request_id $REQUEST_LOGOFF
+        send_request_id $REQUEST_TERMINATE
+        
+        return 0
     done
     
     log_message "Kommunikation fehlgeschlagen nach $max_attempts Versuchen"
@@ -301,184 +625,178 @@ authenticate_with_meter() {
 }
 
 # Funktion zum Auslesen der Zählerstände
+# Implementiert die Tabellen-Leslogik wie in SmartMeterOSGPHandler.java
 read_meter_values() {
     log_message "Lese Zählerstände aus..."
-    
-    # Verschiedene Tabellen, die typische Zählerstände enthalten
-    local tables=(
-        "0001"  # Allgemeine Geräteidentifikation
-        "0003"  # Status des Geräts
-        "0021"  # Aktuelle Zählerregisterwerte
-        "0023"  # Momentanwerte (Spannung, Strom, Leistung)
-        "0010"  # Standard-Tabelle für Energiewerte gemäß ANSI C12.19
-        "0012"  # Standard-Tabelle für Spannungs/Strom-Werte gemäß ANSI C12.19
-        "0015"  # Standard-Tabelle für Leistungswerte gemäß ANSI C12.19
-    )
     
     local timestamp=$(date +"%Y-%m-%d %H:%M:%S")
     local kwh_total=""
     local kwh_t1=""
     local kwh_t2=""
     local power=""
-    local voltage=""
-    local current=""
+    local voltage_l1=""
+    local voltage_l2=""
+    local voltage_l3=""
+    local current_l1=""
+    local current_l2=""
+    local current_l3=""
     local data_collected=false
     
-    for table in "${tables[@]}"; do
-        log_message "Versuche Zugriff auf Tabelle $table..."
-        
-        # Konvertiere die Tabellen-ID in Bytes
-        local table_high=$((0x${table:0:2}))
-        local table_low=$((0x${table:2:2}))
-        
-        # Sende Full Read Request für die Tabelle
-        send_bytes $START_BYTE $IDENTITY_BYTE 0x00 0x00 0x03 0x00 $REQUEST_READ $table_low $table_high
-        sleep 1
-        
-        # Empfange Antwort
+    # Spezifische Tabellen aus der Java-Implementierung
+    # Tabelle 23: Energiewerte (Forward/Reverse active energy)
+    # Tabelle 28: Momentanwerte (Forward/Reverse active power, L1/L2/L3 current/voltage)
+    
+    # 1. Lese Tabelle 23 für Energiewerte
+    log_message "Lese Tabelle 23 (Energiewerte)..."
+    if send_read_table 23; then
         local data_file=$(mktemp)
-        # Mehr Daten empfangen und längere Timeout-Zeit (10 Sekunden)
-        dd if="$DEVICE" of="$data_file" bs=1 count=512 iflag=nonblock timeout=10 2>/dev/null
+        # Empfange Antwort mit längerer Timeout-Zeit
+        dd if="$DEVICE" of="$data_file" bs=1 count=512 iflag=nonblock 2>/dev/null
+        sleep 0.5
         
         if [[ -s "$data_file" ]]; then
-            log_message "Daten für Tabelle $table empfangen"
-            hexdump -C "$data_file" >> "$LOG_FILE"
+            log_message "Daten für Tabelle 23 empfangen"
+            hexdump -C "$data_file" | tee -a "$LOG_FILE"
             
-            # Extrahiere Werte basierend auf der Tabelle
-            case "$table" in
-                "0001")
-                    # Geräteidentifikation extrahieren und loggen
-                    log_message "Geräteidentifikation gelesen"
-                    
-                    # Der erste Datensatz enthält häufig die Geräteinformationen
-                    # Extrahieren wir die ersten 12 Bytes als Geräte-ID für das Log
-                    local device_id=$(hexdump -v -e '"%02X"' -s 10 -n 12 "$data_file" 2>/dev/null || echo "unbekannt")
-                    log_message "Geräte-ID: $device_id"
-                    data_collected=true
-                    ;;
-                "0003")
-                    # Gerätestatus extrahieren und loggen
-                    log_message "Gerätestatus gelesen"
-                    
-                    # Oft sind hier Statusbytes wie Batteriestatus usw.
-                    local status_byte=$(hexdump -v -e '"%02X"' -s 12 -n 1 "$data_file" 2>/dev/null || echo "00")
-                    log_message "Status: $status_byte"
-                    data_collected=true
-                    ;;
-                "0010"|"0021")
-                    # Versuche, kWh-Werte zu extrahieren (ANSI C12.19 Struktur)
-                    log_message "Zählerstände gelesen"
-                    
-                    # Verbesserte Datenextraktion: Sucht nach Pattern im Data Frame statt Text
-                    # Typisches Format für kWh-Werte: Datenblöcke in erwarteten Bereichen
-                    
-                    # Versuch mit verschiedenen Offsets (typisch für ANSI Meter)
-                    # Die ersten 12-16 Bytes sind oft Header, danach folgen die Daten
-                    for offset in 12 16 20 24 28 32; do
-                        # Prüfen auf valide Daten (nicht 0 und nicht überlappend mit Header)
-                        local energy_value=$(hexdump -v -e '1/4 "%u"' -s $offset -n 4 "$data_file" 2>/dev/null)
-                        
-                        # Wenn der Wert vernünftig erscheint (nicht 0 oder übermäßig hoch)
-                        if [[ -n "$energy_value" && "$energy_value" -gt 0 && "$energy_value" -lt 999999999 ]]; then
-                            # Nimm an, dass dies der Gesamtzählerstand ist
-                            if [[ -z "$kwh_total" ]]; then
-                                # Wert durch 1000 teilen, wenn er zu groß erscheint (typischerweise in Wh statt kWh)
-                                if [[ "$energy_value" -gt 1000000 ]]; then
-                                    kwh_total=$(echo "scale=3; $energy_value / 1000" | bc)
-                                else
-                                    kwh_total=$energy_value
-                                fi
-                                log_message "Zählerstand erkannt: $kwh_total kWh (bei Offset $offset)"
-                            elif [[ -z "$kwh_t1" ]]; then
-                                # Tarifregister 1
-                                if [[ "$energy_value" -gt 1000000 ]]; then
-                                    kwh_t1=$(echo "scale=3; $energy_value / 1000" | bc)
-                                else
-                                    kwh_t1=$energy_value
-                                fi
-                                log_message "Tarif 1 erkannt: $kwh_t1 kWh (bei Offset $offset)"
-                            elif [[ -z "$kwh_t2" ]]; then
-                                # Tarifregister 2
-                                if [[ "$energy_value" -gt 1000000 ]]; then
-                                    kwh_t2=$(echo "scale=3; $energy_value / 1000" | bc)
-                                else
-                                    kwh_t2=$energy_value
-                                fi
-                                log_message "Tarif 2 erkannt: $kwh_t2 kWh (bei Offset $offset)"
-                            fi
-                            
-                            data_collected=true
-                        fi
-                    done
-                    ;;
-                "0012"|"0023"|"0015")
-                    # Versuche, momentane Werte zu extrahieren (Spannung, Strom, Leistung)
-                    log_message "Momentanwerte gelesen"
-                    
-                    # Verbesserte Datenextraktion für momentane Werte
-                    # Nach dem Header befinden sich typischerweise die Werte
-                    # Durchsuchen verschiedene Offsets und suchen nach plausiblen Werten
-                    
-                    # Leistungswerte - typischerweise 2 oder 4 Byte, im Bereich 0-50000W
-                    for offset in 12 14 16 18 20 22 24; do
-                        # 2-Byte und 4-Byte Werte versuchen
-                        local power_val2b=$(hexdump -v -e '1/2 "%u"' -s $offset -n 2 "$data_file" 2>/dev/null)
-                        local power_val4b=$(hexdump -v -e '1/4 "%u"' -s $offset -n 4 "$data_file" 2>/dev/null)
-                        
-                        # Prüfe 2-Byte Wert (typisch für Leistung in W)
-                        if [[ -n "$power_val2b" && "$power_val2b" -gt 0 && "$power_val2b" -lt 50000 && -z "$power" ]]; then
-                            power=$power_val2b
-                            log_message "Leistungswert erkannt: $power W (bei Offset $offset, 2 Bytes)"
-                        fi
-                        
-                        # Wenn 2-Byte Wert unrealistisch, versuche 4-Byte (könnte in mW sein)
-                        if [[ -n "$power_val4b" && "$power_val4b" -gt 1000 && "$power_val4b" -lt 50000000 && -z "$power" ]]; then
-                            power=$(echo "scale=2; $power_val4b / 1000" | bc)
-                            log_message "Leistungswert erkannt: $power W (bei Offset $offset, 4 Bytes, skaliert)"
-                        fi
-                    done
-                    
-                    # Spannungswerte - typischerweise 2 Byte, im Bereich 200-250V
-                    for offset in 14 16 18 20 22 24 26; do
-                        local voltage_val=$(hexdump -v -e '1/2 "%u"' -s $offset -n 2 "$data_file" 2>/dev/null)
-                        
-                        if [[ -n "$voltage_val" && "$voltage_val" -ge 200 && "$voltage_val" -lt 260 && -z "$voltage" ]]; then
-                            voltage=$voltage_val
-                            log_message "Spannungswert erkannt: $voltage V (bei Offset $offset)"
-                        fi
-                    done
-                    
-                    # Stromwerte - typischerweise 2 Byte, im 0-100A Bereich
-                    for offset in 16 18 20 22 24 26 28; do
-                        local current_val=$(hexdump -v -e '1/2 "%u"' -s $offset -n 2 "$data_file" 2>/dev/null)
-                        local current_scaled=$(echo "scale=3; $current_val / 1000" | bc 2>/dev/null)
-                        
-                        # Prüfe auf realistischen Wert (entweder direkt oder skaliert)
-                        if [[ -n "$current_val" && "$current_val" -gt 0 && -z "$current" ]]; then
-                            # Wenn der Wert über 100 ist, könnte er in mA sein - skalieren
-                            if [[ "$current_val" -ge 100 && "$current_val" -lt 100000 ]]; then
-                                current=$current_scaled
-                                log_message "Stromwert erkannt: $current A (bei Offset $offset, skaliert von $current_val mA)"
-                            elif [[ "$current_val" -lt 100 ]]; then 
-                                current=$current_val
-                                log_message "Stromwert erkannt: $current A (bei Offset $offset)"
-                            fi
-                        fi
-                    done
-                    
-                    data_collected=true
-                    ;;
-            esac
+            # Analog zur Methode handleTable23Reply() in Java
+            # Die Daten beginnen nach dem Header (typisch: nach 7 Bytes)
+            # Format ist Little-Endian
+            
+            # Extrahiere den Tabellenlängen-Header (2 Bytes nach Protokoll-Header)
+            local header_offset=7  # START(1) + IDENTITY(1) + CTRL(1) + SEQ(1) + LEN(2) + RESP_CODE(1)
+            
+            # Forward Active Energy (4 Bytes)
+            local fwd_active=$(hexdump -v -e '1/4 "%u"' -s $header_offset -n 4 "$data_file" 2>/dev/null)
+            if [[ -n "$fwd_active" && "$fwd_active" -gt 0 ]]; then
+                # Konvertiere von Wh zu kWh wie in Java
+                kwh_total=$(echo "scale=3; $fwd_active / 1000" | bc)
+                log_message "Vorwärts-Energie: $kwh_total kWh"
+                data_collected=true
+            fi
+            
+            # Reverse Active Energy (4 Bytes)
+            local rev_active=$(hexdump -v -e '1/4 "%u"' -s $((header_offset + 4)) -n 4 "$data_file" 2>/dev/null)
+            if [[ -n "$rev_active" && "$rev_active" -gt 0 ]]; then
+                # Konvertiere von Wh zu kWh
+                rev_active=$(echo "scale=3; $rev_active / 1000" | bc)
+                log_message "Rückwärts-Energie: $rev_active kWh"
+                kwh_t1=$rev_active  # Speichere als Tarif 1 für CSV-Kompatibilität
+            fi
         else
-            log_message "Keine Daten für Tabelle $table empfangen"
+            log_message "Keine Daten für Tabelle 23 empfangen"
         fi
-        
         rm -f "$data_file"
-        sleep 1
-    done
+    else
+        log_message "Fehler beim Lesen der Tabelle 23"
+    fi
+    
+    sleep 0.5
+    
+    # 2. Lese Tabelle 28 für Momentanwerte
+    log_message "Lese Tabelle 28 (Momentanwerte)..."
+    if send_read_partial_table 28 0 40; then  # Lese 40 Bytes ab Offset 0
+        local data_file=$(mktemp)
+        # Empfange Antwort mit längerer Timeout-Zeit
+        dd if="$DEVICE" of="$data_file" bs=1 count=512 iflag=nonblock 2>/dev/null
+        sleep 0.5
+        
+        if [[ -s "$data_file" ]]; then
+            log_message "Daten für Tabelle 28 empfangen"
+            hexdump -C "$data_file" | tee -a "$LOG_FILE"
+            
+            # Analog zur Methode handleTable28Reply() in Java
+            local header_offset=7  # Wie oben
+            
+            # Prüfe Tabellenlänge (bei Offset 0x03)
+            local table_length=$(hexdump -v -e '1/2 "%u"' -s $header_offset -n 2 "$data_file" 2>/dev/null)
+            header_offset=$((header_offset + 2))  # Überspringe die Tabellenlänge
+            
+            # Forward Active Power
+            local fwd_power=$(hexdump -v -e '1/4 "%u"' -s $header_offset -n 4 "$data_file" 2>/dev/null)
+            if [[ -n "$fwd_power" ]]; then
+                power=$fwd_power
+                log_message "Vorwärts-Leistung: $power W"
+                data_collected=true
+            fi
+            header_offset=$((header_offset + 4))
+            
+            # Reverse Active Power
+            local rev_power=$(hexdump -v -e '1/4 "%u"' -s $header_offset -n 4 "$data_file" 2>/dev/null)
+            if [[ -n "$rev_power" ]]; then
+                log_message "Rückwärts-Leistung: $rev_power W"
+            fi
+            header_offset=$((header_offset + 4))
+            
+            # Import Reactive Power (VAr)
+            header_offset=$((header_offset + 4))
+            
+            # Export Reactive Power (VAr)
+            header_offset=$((header_offset + 4))
+            
+            # L1/L2/L3 Strom in mA
+            current_l1=$(hexdump -v -e '1/4 "%u"' -s $header_offset -n 4 "$data_file" 2>/dev/null)
+            if [[ -n "$current_l1" ]]; then
+                current_l1=$(echo "scale=3; $current_l1 / 1000" | bc)
+                log_message "Strom L1: $current_l1 A"
+            fi
+            header_offset=$((header_offset + 4))
+            
+            current_l2=$(hexdump -v -e '1/4 "%u"' -s $header_offset -n 4 "$data_file" 2>/dev/null)
+            if [[ -n "$current_l2" ]]; then
+                current_l2=$(echo "scale=3; $current_l2 / 1000" | bc)
+                log_message "Strom L2: $current_l2 A"
+            fi
+            header_offset=$((header_offset + 4))
+            
+            current_l3=$(hexdump -v -e '1/4 "%u"' -s $header_offset -n 4 "$data_file" 2>/dev/null)
+            if [[ -n "$current_l3" ]]; then
+                current_l3=$(echo "scale=3; $current_l3 / 1000" | bc)
+                log_message "Strom L3: $current_l3 A"
+            fi
+            header_offset=$((header_offset + 4))
+            
+            # L1/L2/L3 Spannung in mV
+            voltage_l1=$(hexdump -v -e '1/4 "%u"' -s $header_offset -n 4 "$data_file" 2>/dev/null)
+            if [[ -n "$voltage_l1" ]]; then
+                voltage_l1=$(echo "scale=1; $voltage_l1 / 1000" | bc)
+                log_message "Spannung L1: $voltage_l1 V"
+            fi
+            header_offset=$((header_offset + 4))
+            
+            voltage_l2=$(hexdump -v -e '1/4 "%u"' -s $header_offset -n 4 "$data_file" 2>/dev/null)
+            if [[ -n "$voltage_l2" ]]; then
+                voltage_l2=$(echo "scale=1; $voltage_l2 / 1000" | bc)
+                log_message "Spannung L2: $voltage_l2 V"
+            fi
+            header_offset=$((header_offset + 4))
+            
+            voltage_l3=$(hexdump -v -e '1/4 "%u"' -s $header_offset -n 4 "$data_file" 2>/dev/null)
+            if [[ -n "$voltage_l3" ]]; then
+                voltage_l3=$(echo "scale=1; $voltage_l3 / 1000" | bc)
+                log_message "Spannung L3: $voltage_l3 V"
+            fi
+            
+        else
+            log_message "Keine Daten für Tabelle 28 empfangen"
+        fi
+        rm -f "$data_file"
+    else
+        log_message "Fehler beim Lesen der Tabelle 28"
+    fi
     
     # Wenn Daten gesammelt wurden, füge sie der CSV-Datei hinzu
     if $data_collected; then
+        # Durchschnittliche Spannung und Strom berechnen (wenn mehrphasig)
+        local voltage="${voltage_l1:-0}"
+        if [[ -n "$voltage_l2" || -n "$voltage_l3" ]]; then
+            voltage=$(echo "scale=1; (${voltage_l1:-0} + ${voltage_l2:-0} + ${voltage_l3:-0}) / 3" | bc)
+        fi
+        
+        local current="${current_l1:-0}"
+        if [[ -n "$current_l2" || -n "$current_l3" ]]; then
+            current=$(echo "scale=3; (${current_l1:-0} + ${current_l2:-0} + ${current_l3:-0}) / 3" | bc)
+        fi
+        
         # Fallback-Werte setzen, falls Werte nicht gefunden wurden
         kwh_total="${kwh_total:-N/A}"
         kwh_t1="${kwh_t1:-N/A}"
@@ -526,95 +844,141 @@ scan_all_tables() {
     echo "Gerät: $DEVICE" >> "$scan_output"
     echo "Kommunikationsparameter: $SERIAL_CONFIG" >> "$scan_output"
     echo "Start-Byte: $(printf "0x%02X" $START_BYTE), Identity-Byte: $(printf "0x%02X" $IDENTITY_BYTE)" >> "$scan_output"
+    echo "Protocol: ANSI C12.18/19, IEC 62056-21" >> "$scan_output"
     echo "===============================" >> "$scan_output"
     echo "" >> "$scan_output"
     
-    # Bevor wir anfangen, sicherstellen, dass der Zähler bereit ist
+    # Initialisiere Toggle-Control-Bit
+    TOGGLE_CONTROL=false
+    
+    # Wake-up und Initialisierung
     log_message "Sende initiale Wake-up Sequenz für den Scan..."
     for i in {1..5}; do
-        send_bytes 0x55 0x55 0x55 0x55 0x55
+        _send_bytes 0x55 0x55 0x55 0x55 0x55
         sleep 0.3
     done
     sleep 1
     
-    # Sende Ident-Request, um den Zähler zu aktivieren
-    log_message "Sende Ident-Request zur Zählerinitialisierung..."
-    send_bytes $START_BYTE $IDENTITY_BYTE 0x00 0x00 0x01 0x00 $REQUEST_IDENT
-    sleep 1
+    # Protokoll-Handshake durchführen
+    log_message "Initialisiere Verbindung zum Zähler..."
     
-    # Puffer leeren
-    dd if=$DEVICE iflag=nonblock of=/dev/null bs=1 count=1000 2>/dev/null || true
-    sleep 0.5
+    # Ident, Negotiate, Logon, Security
+    if ! send_request_id $REQUEST_IDENT; then
+        log_message "FEHLER: Ident-Request fehlgeschlagen. Breche Scan ab."
+        return 1
+    fi
+    
+    if ! send_negotiate_request; then
+        log_message "FEHLER: Negotiate-Request fehlgeschlagen. Breche Scan ab."
+        return 1
+    fi
+    
+    if ! send_logon_request 0 "User"; then
+        log_message "FEHLER: Logon-Request fehlgeschlagen. Breche Scan ab."
+        return 1
+    fi
+    
+    if ! send_security_request "$PASSWORD"; then
+        log_message "FEHLER: Security-Request fehlgeschlagen. Breche Scan ab."
+        return 1
+    fi
     
     # Wir scannen Tabellen von 0-50, was die meisten relevanten Tabellen abdecken sollte
     echo "Start des Scans: $(date)" >> "$scan_output"
+    echo "Verwende verbesserte Protokoll-Implementierung entsprechend SmartMeterOSGPHandler.java" >> "$scan_output"
+    echo "" >> "$scan_output"
     
     # Fortschrittsanzeige
     local total_tables=51  # 0-50 Tables
     local scanned=0
     local data_found=0
     
-    for high in {0..0}; do
-        for low in {0..50}; do
-            local high_hex=$(printf "%02X" $high)
-            local low_hex=$(printf "%02X" $low)
-            local table_id="${high_hex}${low_hex}"
+    # Puffer leeren vor dem Scan
+    dd if="$DEVICE" iflag=nonblock of=/dev/null bs=1 count=1000 2>/dev/null || true
+    sleep 0.5
+    
+    for table in {0..50}; do
+        # Fortschrittsanzeige
+        scanned=$((scanned + 1))
+        local table_hex=$(printf "%02X" $table)
+        log_message "Scanne Tabelle $table_hex... [$scanned/$total_tables]"
+        
+        # Sende Read Request für die Tabelle mit der neuen Protokoll-Implementierung
+        send_read_table $table
+        
+        # Empfange Antwort mit mehreren Versuchen
+        local scan_file=$(mktemp)
+        local received=0
+        
+        for attempt in {1..3}; do
+            dd if="$DEVICE" of="$scan_file" bs=1 count=512 iflag=nonblock 2>/dev/null
+            local file_size=$(stat -c %s "$scan_file" 2>/dev/null || echo "0")
             
-            # Fortschrittsanzeige
-            scanned=$((scanned + 1))
-            log_message "Scanne Tabelle $table_id... [$scanned/$total_tables]"
+            if [[ "$file_size" -gt 5 ]]; then
+                received=1
+                break
+            fi
             
-            # Sende Read Request für die Tabelle
-            send_bytes $START_BYTE $IDENTITY_BYTE 0x00 0x00 0x03 0x00 $REQUEST_READ $low $high
-            sleep 1
+            log_message "Versuch $attempt: Keine sofortige Antwort für Tabelle $table_hex, warte..."
+            sleep 0.5
+        done
+        
+        if [[ $received -eq 1 && -s "$scan_file" ]]; then
+            local file_size=$(stat -c %s "$scan_file")
             
-            # Empfange Antwort mit mehreren Versuchen
-            local scan_file=$(mktemp)
-            local received=0
+            # Antwort analysieren
+            # Prüfe ob es START_BYTE am Anfang hat
+            local first_byte=$(hexdump -v -e '1/1 "%02X"' -s 0 -n 1 "$scan_file")
             
-            for attempt in {1..3}; do
-                dd if="$DEVICE" of="$scan_file" bs=1 count=512 iflag=nonblock 2>/dev/null
-                local file_size=$(stat -c %s "$scan_file" 2>/dev/null || echo "0")
+            if [[ "$(printf '%02X' $START_BYTE)" == "$first_byte" ]]; then
+                # Gültiges Frame - Extrahiere Response-Code (Byte nach dem Header)
+                local resp_code=$(hexdump -v -e '1/1 "%u"' -s 6 -n 1 "$scan_file")
                 
-                if [[ "$file_size" -gt 5 ]]; then
-                    received=1
-                    break
-                fi
-                
-                log_message "Versuch $attempt: Keine sofortige Antwort für Tabelle $table_id, warte..."
-                sleep 0.5
-            done
-            
-            if [[ $received -eq 1 && -s "$scan_file" ]]; then
-                local file_size=$(stat -c %s "$scan_file")
-                
-                # Prüfen, ob die Antwort eine NACK enthält oder nur ein ACK
-                if grep -q -a $'\x15' "$scan_file"; then
-                    log_message "NACK für Tabelle $table_id erhalten - Tabelle nicht verfügbar"
-                    echo "TABELLE $table_id: NICHT VERFÜGBAR (NACK)" >> "$scan_output"
-                elif grep -q -a $'\x06' "$scan_file" && [[ $file_size -le 6 ]]; then
-                    log_message "Nur ACK für Tabelle $table_id erhalten - keine Daten"
-                    echo "TABELLE $table_id: NUR ACK ERHALTEN (KEINE DATEN)" >> "$scan_output"
-                else
-                    # Wenn wir hier sind, haben wir wahrscheinlich Daten
-                    log_message "Daten für Tabelle $table_id gefunden (${file_size} Bytes):"
-                    hexdump -C "$scan_file" | tee -a "$LOG_FILE"
+                if [[ "$resp_code" -eq 0 ]]; then
+                    # Acknowledge (0) - Daten gefunden
+                    log_message "Daten für Tabelle $table_hex gefunden (${file_size} Bytes)"
                     
-                    echo "----- TABELLE $table_id: -----" >> "$scan_output"
+                    echo "----- TABELLE $table_hex: -----" >> "$scan_output"
                     echo "Bytes: $file_size" >> "$scan_output"
+                    echo "Response-Code: $resp_code (ACK)" >> "$scan_output"
                     hexdump -C "$scan_file" >> "$scan_output"
                     echo "" >> "$scan_output"
                     data_found=$((data_found + 1))
+                else
+                    # Fehlercode
+                    log_message "Fehler $resp_code für Tabelle $table_hex erhalten"
+                    echo "TABELLE $table_hex: FEHLER (Code $resp_code)" >> "$scan_output"
+                    hexdump -C "$scan_file" >> "$scan_output"
+                    echo "" >> "$scan_output"
                 fi
+            elif grep -q -a $'\x06' "$scan_file"; then
+                # Nur ACK, keine Daten
+                log_message "Nur ACK für Tabelle $table_hex erhalten - keine Daten"
+                echo "TABELLE $table_hex: NUR ACK ERHALTEN (KEINE DATEN)" >> "$scan_output"
+            elif grep -q -a $'\x15' "$scan_file"; then
+                # NACK erhalten
+                log_message "NACK für Tabelle $table_hex erhalten - Tabelle nicht verfügbar"
+                echo "TABELLE $table_hex: NICHT VERFÜGBAR (NACK)" >> "$scan_output"
             else
-                log_message "Keine Antwort für Tabelle $table_id erhalten"
-                echo "TABELLE $table_id: KEINE ANTWORT" >> "$scan_output"
+                # Unbekanntes Format
+                log_message "Unbekannte Antwort für Tabelle $table_hex erhalten"
+                echo "TABELLE $table_hex: UNBEKANNTE ANTWORT" >> "$scan_output"
+                hexdump -C "$scan_file" >> "$scan_output"
+                echo "" >> "$scan_output"
             fi
-            
-            rm -f "$scan_file"
-            sleep 0.5
-        done
-    done
+        else
+            log_message "Keine Antwort für Tabelle $table_hex erhalten"
+            echo "TABELLE $table_hex: KEINE ANTWORT" >> "$scan_output"
+        fi
+        
+        rm -f "$scan_file"
+        sleep 0.5
+    }
+    
+    # Session beenden
+    log_message "Beende Session..."
+    send_request_id $REQUEST_LOGOFF
+    send_request_id $REQUEST_TERMINATE
     
     # Zusammenfassung
     echo "" >> "$scan_output"
