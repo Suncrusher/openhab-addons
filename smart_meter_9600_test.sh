@@ -95,35 +95,56 @@ function test_9600_baud_options {
                             sleep 2
                             echo -ne "/?E\\r\\n" > $DEVICE    # Mode E (direkt mit höherer Baudrate)
                         else
-                            # Standard ANSI C12.18 Format - Sichere Formatierung
-                            start_byte_fmt=$(printf "\\x%02x" $start_byte)
-                            id_byte_fmt=$(printf "\\x%02x" $identity_byte)
-                            echo -ne "$start_byte_fmt$id_byte_fmt\x00\x00\x01\x00\x20" > $DEVICE
+                            # Standard ANSI C12.18 Format - Sichere Formatierung mit temporärer Datei
+                            local ident_request=$(mktemp)
+                            
+                            # Header Teil für Teil schreiben
+                            printf "$(printf "\\x%02x" $start_byte)" > $ident_request
+                            printf "$(printf "\\x%02x" $identity_byte)" >> $ident_request
+                            printf "\x00\x00\x01\x00\x20" >> $ident_request
+                            
+                            # Sende den Befehl
+                            cat $ident_request > $DEVICE
+                            rm -f $ident_request
                             
                             # Bei passwortgeschützter Kommunikation versuchen wir auch einen Authentifizierungsversuch
                             if [[ $start_byte == "0xEE" ]]; then
                                 sleep 1
                                 echo "Versuche Authentifizierung mit Standard-Passwort..."
                                 # Sende LOGON-Request (0x50) mit Passwort
-                                # Konvertiere Passwort in Hex-Bytes für die Übertragung
-                                password_hex=""
+                                # Erstelle eine temporäre Datei mit den Bytes für den Authentifizierungsbefehl
+                                local auth_request=$(mktemp)
+                                
+                                # Start-Byte und Identity-Byte schreiben
+                                printf "$(printf "\\x%02x" $start_byte)" > $auth_request
+                                printf "$(printf "\\x%02x" $identity_byte)" >> $auth_request
+                                
+                                # Kontroll-Byte und Reserved
+                                printf "\x00\x00" >> $auth_request
+                                
+                                # Länge des Passworts
+                                password_len=${#PASSWORD}
+                                printf "$(printf "\\x%02x" $password_len)" >> $auth_request
+                                
+                                # Restlicher Header (High-Length und Kommando)
+                                printf "\x00\x50" >> $auth_request
+                                
+                                # Passwort Zeichen für Zeichen schreiben
                                 for (( i=0; i<${#PASSWORD}; i++ )); do
                                     char="${PASSWORD:$i:1}"
-                                    # Vermeide printf Fehler mit einfachen Anführungszeichen
-                                    hex_val=$(printf "%02x" "'$char" 2>/dev/null || printf "%02x" "'?")
-                                    password_hex+="\x$hex_val"
+                                    # Vermeide Fehler mit Sonderzeichen
+                                    if [[ $(printf "%d" "'$char" 2>/dev/null) ]]; then
+                                        printf "$(printf "\\x%02x" "'$char")" >> $auth_request
+                                    else
+                                        printf "\x3F" >> $auth_request  # Fragezeichen für nicht-druckbare Zeichen
+                                    fi
                                 done
                                 
-                                # Passwortlänge berechnen
-                                password_len=${#PASSWORD}
+                                # Sende den vollständigen Befehl zum Gerät
+                                cat $auth_request > $DEVICE
+                                rm -f $auth_request
                                 
-                                # Erstelle die Bytes einzeln und füge sie zusammen
-                                start_byte_fmt=$(printf "\\x%02x" $start_byte)
-                                id_byte_fmt=$(printf "\\x%02x" $identity_byte)
-                                len_byte_fmt=$(printf "\\x%02x" $password_len)
-                                
-                                # Stelle den LOGON-Request zusammen
-                                echo -ne "$start_byte_fmt$id_byte_fmt\x00\x00$len_byte_fmt\x00\x50$password_hex" > $DEVICE
+                                echo "Auth-Request mit Passwort ($PASSWORD) gesendet"
                             fi
                         fi
                         sleep 1
@@ -159,10 +180,18 @@ function test_9600_baud_options {
                                 
                                 # Versuche mit anderem Request-Typ
                                 echo "Versuche mit NEGOTIATE-Request (0x61)..."
-                                # Sichere Formatierung
-                                start_byte_fmt=$(printf "\\x%02x" $start_byte)
-                                id_byte_fmt=$(printf "\\x%02x" $identity_byte)
-                                echo -ne "$start_byte_fmt$id_byte_fmt\x00\x00\x01\x00\x61" > $DEVICE
+                                
+                                # Sichere Methode mit temporärer Datei
+                                local neg_request=$(mktemp)
+                                
+                                # Header Teil für Teil schreiben
+                                printf "$(printf "\\x%02x" $start_byte)" > $neg_request
+                                printf "$(printf "\\x%02x" $identity_byte)" >> $neg_request
+                                printf "\x00\x00\x01\x00\x61" >> $neg_request
+                                
+                                # Sende den Befehl
+                                cat $neg_request > $DEVICE
+                                rm -f $neg_request
                                 sleep 1
                                 
                                 # Empfange Antwort
