@@ -1,3 +1,5 @@
+openhabian@openhabian:~ $ ./iec_62056_21_test.sh --password e329b0428c16c74c0125
+Verwende Passwort: e329b0428c16c74c0125
 Smart Meter IEC 62056-21 und ANSI C12.18/19 Test-Script
 ====================================================
 Gerät: /dev/ttyUSB0
@@ -20,7 +22,27 @@ Keine erfolgreiche IEC 62056-21 Konfiguration gefunden.
 Teste ANSI C12.19 Tabellenzugriffe
 --------------------------------
 Versuche Authentifizierung mit Passwort: e329b0428c16c74c0125
-./iec_62056_21_test.sh: Zeile 201: printf: Fehlende hexadezimale Ziffer nach \x.
+./iec_62056_21_test.sh: Zeile 200: printf: Fehlende hexadezimale Ziffer nach \x.
+./iec_62056_21_test.sh: Zeile 210: printf: Fehlende hexadezimale Ziffer nach \x.
+./iec_62056_21_test.sh: Zeile 210: printf: Fehlende hexadezimale Ziffer nach \x.
+./iec_62056_21_test.sh: Zeile 210: printf: Fehlende hexadezimale Ziffer nach \x.
+./iec_62056_21_test.sh: Zeile 210: printf: Fehlende hexadezimale Ziffer nach \x.
+./iec_62056_21_test.sh: Zeile 210: printf: Fehlende hexadezimale Ziffer nach \x.
+./iec_62056_21_test.sh: Zeile 210: printf: Fehlende hexadezimale Ziffer nach \x.
+./iec_62056_21_test.sh: Zeile 210: printf: Fehlende hexadezimale Ziffer nach \x.
+./iec_62056_21_test.sh: Zeile 210: printf: Fehlende hexadezimale Ziffer nach \x.
+./iec_62056_21_test.sh: Zeile 210: printf: Fehlende hexadezimale Ziffer nach \x.
+./iec_62056_21_test.sh: Zeile 210: printf: Fehlende hexadezimale Ziffer nach \x.
+./iec_62056_21_test.sh: Zeile 210: printf: Fehlende hexadezimale Ziffer nach \x.
+./iec_62056_21_test.sh: Zeile 210: printf: Fehlende hexadezimale Ziffer nach \x.
+./iec_62056_21_test.sh: Zeile 210: printf: Fehlende hexadezimale Ziffer nach \x.
+./iec_62056_21_test.sh: Zeile 210: printf: Fehlende hexadezimale Ziffer nach \x.
+./iec_62056_21_test.sh: Zeile 210: printf: Fehlende hexadezimale Ziffer nach \x.
+./iec_62056_21_test.sh: Zeile 210: printf: Fehlende hexadezimale Ziffer nach \x.
+./iec_62056_21_test.sh: Zeile 210: printf: Fehlende hexadezimale Ziffer nach \x.
+./iec_62056_21_test.sh: Zeile 210: printf: Fehlende hexadezimale Ziffer nach \x.
+./iec_62056_21_test.sh: Zeile 210: printf: Fehlende hexadezimale Ziffer nach \x.
+./iec_62056_21_test.sh: Zeile 210: printf: Fehlende hexadezimale Ziffer nach \x.
 
 Tests abgeschlossen.
 Prüfen Sie die Ausgabe auf erfolgreiche Konfigurationen.
@@ -36,15 +58,111 @@ Spezifischer Test für 9600 Baud (Standard laut Handbuch)
 Teste 9600 Baud mit: -parenb  -cstopb
 Sende erweiterte Wake-up Sequenz...
 Teste mit Start-Byte: 0xEE, Identity-Byte: 0x00
-./smart_meter_9600_test.sh: Zeile 99: printf: Fehlende hexadezimale Ziffer nach \x.
-./smart_meter_9600_test.sh: Zeile 99: printf: Fehlende hexadezimale Ziffer nach \x.
-./smart_meter_9600_test.sh: Zeile 99: Warnung: Kommandoersetzung: NULL-Byte in der Eingabe ignoriert.
+./smart_meter_9600_test.sh: Zeile 102: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 103: printf: Fehlende hexadezimale Ziffer nach \x.
 Versuche Authentifizierung mit Standard-Passwort...
-./smart_meter_9600_test.sh: Zeile 116: printf: Fehlende hexadezimale Ziffer nach \x.
-./smart_meter_9600_test.sh: Zeile 116: printf: Fehlende hexadezimale Ziffer nach \x.
-./smart_meter_9600_test.sh: Zeile 116: printf: Fehlende hexadezimale Ziffer nach \x.
-./smart_meter_9600_test.sh: Zeile 116: Warnung: Kommandoersetzung: NULL-Byte in der Eingabe ignoriert.
+./smart_meter_9600_test.sh: Zeile 119: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 120: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 127: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+Auth-Request mit Passwort (e329b0428c16c74c0125) gesendet
 Antwort erhalten:
-00000000  ff 00 14 50 65 33 32 39  62 30 34 32 38 43 30 36  |...Pe329b0428C06|
-00000010  63 37 34 63                                       |c74c|
+00000000  ff 00 00 00 14 00 50 00  33 32 39 62 30 34 32 38  |......P.329b0428|
+00000010  63 31 36 63                                       |c16c|
 00000014
+Teste mit Start-Byte: 0xEE, Identity-Byte: 0x01
+./smart_meter_9600_test.sh: Zeile 102: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 103: printf: Fehlende hexadezimale Ziffer nach \x.
+Versuche Authentifizierung mit Standard-Passwort...
+./smart_meter_9600_test.sh: Zeile 119: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 120: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 127: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+Auth-Request mit Passwort (e329b0428c16c74c0125) gesendet
+Antwort erhalten:
+00000000  ff 01 00 00 14 00 50 65  33 32 39 62 10 34 32 38  |......Pe329b.428|
+00000010  63 31 36 63                                       |c16c|
+00000014
+Teste mit Start-Byte: 0xEE, Identity-Byte: 0x3F
+./smart_meter_9600_test.sh: Zeile 102: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 103: printf: Fehlende hexadezimale Ziffer nach \x.
+Versuche Authentifizierung mit Standard-Passwort...
+./smart_meter_9600_test.sh: Zeile 119: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 120: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 127: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 137: printf: Fehlende hexadezimale Ziffer nach \x.
+Auth-Request mit Passwort (e329b0428c16c74c0125) gesendet
+Antwort erhalten:
+00000000  ff 3f 00 00 14 00 00 d6  92 ca 12 c1 34 32 38 63  |.?..........428c|
+00000010  31 36 63 37                                       |16c7|
+00000014
+Teste mit Start-Byte: 0xFF, Identity-Byte: 0x00
+./smart_meter_9600_test.sh: Zeile 102: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 103: printf: Fehlende hexadezimale Ziffer nach \x.
+Antwort erhalten:
+00000000  00 00 00 01 00 20 15                              |..... .|
+00000007
+Teste mit Start-Byte: 0xFF, Identity-Byte: 0x01
+./smart_meter_9600_test.sh: Zeile 102: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 103: printf: Fehlende hexadezimale Ziffer nach \x.
+Antwort erhalten:
+00000000  01 00 00 01 00 20                                 |..... |
+00000006
+^C
