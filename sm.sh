@@ -82,25 +82,36 @@ function send_message {
     # Paket in Hex formatieren für stty
     local hex_string=""
     for byte in "${packet[@]}"; do
-        printf -v hex_byte "\\x%02X" $byte
+        # Sicherstellen, dass der Wert eine Zahl ist (keine Hex-Strings wie 0xNN)
+        if [[ $byte =~ ^0x ]]; then
+            byte=$((byte))
+        fi
+        printf -v hex_byte "\\\\x%02X" $byte
         hex_string+=$hex_byte
     done
     
     # Debug-Ausgabe
     echo "Sending: ${hex_string}" >&2
     
-    # Senden der Nachricht
-    printf "${hex_string}" > $DEVICE
+    # Senden der Nachricht - printf mit einem einzelnen Backslash für die binäre Ausgabe
+    # Konvertiert "\x41" in das tatsächliche Byte 0x41
+    printf "$(echo -e "${hex_string}")" > $DEVICE
     
     # Auf ACK warten
-    read -t 2 -N 1 response < $DEVICE
-    response_hex=$(hexdump -v -e '1/1 "0x%02X "' <<< "$response")
+    read -t 2 -N 1 response < $DEVICE 2>/dev/null || { echo "Timeout beim Warten auf ACK" >&2; return 1; }
     
-    if [[ "$response_hex" == "0x06 " ]]; then
+    if [[ -z "$response" ]]; then
+        echo "Leere Antwort empfangen" >&2
+        return 1
+    fi
+    
+    response_ascii=$(printf '%d' "'$response")
+    
+    if [[ "$response_ascii" == "6" ]]; then  # ACK = 0x06
         echo "ACK empfangen" >&2
         return 0
     else
-        echo "NACK oder unbekannte Antwort empfangen: $response_hex" >&2
+        echo "NACK oder unbekannte Antwort empfangen: ASCII $response_ascii" >&2
         return 1
     fi
 }
@@ -115,10 +126,11 @@ function receive_message {
 
     # Warten auf Start-Byte
     while (( $(date +%s) - start_time < timeout )); do
-        read -t 1 -N 1 byte < $DEVICE
-        byte_hex=$(hexdump -v -e '1/1 "0x%02X"' <<< "$byte")
+        read -t 1 -N 1 byte < $DEVICE 2>/dev/null || continue
+        [[ -z "$byte" ]] && continue
+        byte_hex=$(printf '%02X' "'$byte")
         
-        if [[ "$byte_hex" == "0xEE" ]]; then
+        if [[ "$byte_hex" == "EE" ]]; then
             data+=$byte
             found_start=1
             break
@@ -131,27 +143,36 @@ function receive_message {
     fi
     
     # Lese Identity und Control
-    read -t 2 -N 2 bytes < $DEVICE
+    read -t 2 -N 2 bytes < $DEVICE 2>/dev/null || { echo "Fehler beim Lesen von Identity und Control" >&2; return 1; }
+    [[ -z "$bytes" ]] && { echo "Leere Bytes empfangen für Identity und Control" >&2; return 1; }
     data+=$bytes
     
     # Lese Länge (2 Bytes)
-    read -t 2 -N 2 length_bytes < $DEVICE
+    read -t 2 -N 2 length_bytes < $DEVICE 2>/dev/null || { echo "Fehler beim Lesen der Längenangabe" >&2; return 1; }
+    [[ -z "$length_bytes" ]] && { echo "Leere Bytes empfangen für Längenangabe" >&2; return 1; }
     data+=$length_bytes
     
-    # Berechne Länge aus den empfangenen Bytes
-    length_hex=$(hexdump -v -e '1/1 "%02X"' <<< "${length_bytes}")
-    length=$((0x${length_hex:0:2} + 0x${length_hex:2:2} * 256))
+    # Konvertiere die beiden Bytes in eine Längenangabe (Little Endian)
+    length_byte1=$(printf '%d' "'${length_bytes:0:1}")
+    length_byte2=$(printf '%d' "'${length_bytes:1:1}")
+    length=$((length_byte1 + length_byte2 * 256))
+    
+    echo "Empfange Payload mit Länge $length..." >&2
     
     # Lese Daten gemäß der Länge
-    read -t 5 -N $length payload < $DEVICE
-    data+=$payload
+    if [[ $length -gt 0 ]]; then
+        read -t 5 -N $length payload < $DEVICE 2>/dev/null || { echo "Fehler beim Lesen des Payloads" >&2; return 1; }
+        [[ ${#payload} -ne $length ]] && { echo "Unvollständiger Payload empfangen: ${#payload} von $length Bytes" >&2; return 1; }
+        data+=$payload
+    fi
     
     # Lese CRC (2 Bytes)
-    read -t 2 -N 2 crc_bytes < $DEVICE
+    read -t 2 -N 2 crc_bytes < $DEVICE 2>/dev/null || { echo "Fehler beim Lesen des CRC" >&2; return 1; }
+    [[ -z "$crc_bytes" ]] && { echo "Leere Bytes empfangen für CRC" >&2; return 1; }
     data+=$crc_bytes
     
     # Sende ACK zurück
-    printf "\x06" > $DEVICE
+    echo -ne "\x06" > $DEVICE
     
     # Gebe die empfangenen Daten zurück
     echo "$data"
@@ -162,11 +183,21 @@ function parse_table_data {
     local data="$1"
     local table="$2"
     
+    # Speichere Daten temporär in einer Datei für hexdump
+    local tmp_file=$(mktemp)
+    echo -n "$data" > "$tmp_file"
+    
+    # Debug
+    echo "Empfangene Datenlänge: ${#data} Bytes" >&2
+    echo "Hexdump der empfangenen Daten:" >&2
+    hexdump -C "$tmp_file" >&2
+    
     # Hier müssen die Bytes ab Position 6 (nach Header) geparst werden
     if [[ "$table" == "23" ]]; then
         # Tabelle 23: Vorwärts- und rückwärts aktive Energie
-        fwd_energy=$(hexdump -s 8 -n 4 -v -e '1/4 "%d"' <<< "$data")
-        rev_energy=$(hexdump -s 12 -n 4 -v -e '1/4 "%d"' <<< "$data")
+        # Position 8 startet nach Header (6) + Response Code (1) + Table ID (1)
+        fwd_energy=$(hexdump -s 7 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
+        rev_energy=$(hexdump -s 11 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
         
         fwd_energy_kwh=$(echo "scale=3; $fwd_energy/1000.0" | bc)
         rev_energy_kwh=$(echo "scale=3; $rev_energy/1000.0" | bc)
@@ -175,16 +206,16 @@ function parse_table_data {
         echo "$fwd_energy_kwh,$rev_energy_kwh,,,,,,,,"
     elif [[ "$table" == "28" ]]; then
         # Tabelle 28: Aktuelle Leistungs- und Spannungswerte
-        fwd_power=$(hexdump -s 8 -n 4 -v -e '1/4 "%d"' <<< "$data")
-        rev_power=$(hexdump -s 12 -n 4 -v -e '1/4 "%d"' <<< "$data")
-        import_reactive=$(hexdump -s 16 -n 4 -v -e '1/4 "%d"' <<< "$data")
-        export_reactive=$(hexdump -s 20 -n 4 -v -e '1/4 "%d"' <<< "$data")
-        l1_current=$(hexdump -s 24 -n 4 -v -e '1/4 "%d"' <<< "$data")
-        l2_current=$(hexdump -s 28 -n 4 -v -e '1/4 "%d"' <<< "$data")
-        l3_current=$(hexdump -s 32 -n 4 -v -e '1/4 "%d"' <<< "$data")
-        l1_voltage=$(hexdump -s 36 -n 4 -v -e '1/4 "%d"' <<< "$data")
-        l2_voltage=$(hexdump -s 40 -n 4 -v -e '1/4 "%d"' <<< "$data")
-        l3_voltage=$(hexdump -s 44 -n 4 -v -e '1/4 "%d"' <<< "$data")
+        fwd_power=$(hexdump -s 7 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
+        rev_power=$(hexdump -s 11 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
+        import_reactive=$(hexdump -s 15 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
+        export_reactive=$(hexdump -s 19 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
+        l1_current=$(hexdump -s 23 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
+        l2_current=$(hexdump -s 27 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
+        l3_current=$(hexdump -s 31 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
+        l1_voltage=$(hexdump -s 35 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
+        l2_voltage=$(hexdump -s 39 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
+        l3_voltage=$(hexdump -s 43 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
         
         l1_current_a=$(echo "scale=3; $l1_current/1000.0" | bc)
         l2_current_a=$(echo "scale=3; $l2_current/1000.0" | bc)
@@ -199,15 +230,24 @@ function parse_table_data {
         
         echo ",,$fwd_power,$rev_power,$import_reactive,$export_reactive,$l1_current_a,$l2_current_a,$l3_current_a,$l1_voltage_v,$l2_voltage_v,$l3_voltage_v"
     fi
+    
+    # Temporäre Datei aufräumen
+    rm -f "$tmp_file"
 }
 
 # Funktion zum Initialisieren der Verbindung
 function initialize_connection {
     # Serielle Schnittstelle konfigurieren
-    stty -F $DEVICE raw 9600 
+    stty -F $DEVICE raw 9600 cs8 -cstopb -parenb -echo
+    
+    # Warte einen Moment, bis die Schnittstelle bereit ist
+    sleep 1
     
     # Setze Toggle-Control zurück
     TOGGLE_CONTROL=0
+    
+    # Flush any pending input
+    dd if=$DEVICE iflag=nonblock of=/dev/null bs=1 count=1000 2>/dev/null || true
     
     # Sende IDENT-Request
     echo "Sende Ident-Request..." >&2
@@ -216,12 +256,18 @@ function initialize_connection {
         return 1
     fi
     
+    # Verzögerung zwischen den Befehlen
+    sleep 0.5
+    
     # Sende NEGOTIATE-Request
     echo "Sende Negotiate-Request..." >&2
     if ! send_message $REQUEST_ID_NEGOTIATE2 0x40 0x00 0x02 0x01; then
         echo "FEHLER: Negotiate-Request fehlgeschlagen" >&2
         return 1
     fi
+    
+    # Verzögerung zwischen den Befehlen
+    sleep 0.5
     
     # Sende LOGON-Request
     echo "Sende Logon-Request..." >&2
@@ -241,6 +287,9 @@ function initialize_connection {
         echo "FEHLER: Logon-Request fehlgeschlagen" >&2
         return 1
     fi
+    
+    # Verzögerung zwischen den Befehlen
+    sleep 0.5
     
     # Sende SECURITY-Request (mit Passwort)
     echo "Sende Security-Request..." >&2
