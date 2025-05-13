@@ -9,7 +9,6 @@
 # 3. Hilfe anzeigen:
 #     ./smart_meter_reader.sh --help
 
-#!/bin/bash
 
 # Smart Meter OSGP Reader Script
 # This script reads data from a smart meter using the C12.18 protocol via an optical interface
@@ -22,6 +21,8 @@ USERNAME="00000000"  # Standardwert, bei Bedarf anpassen
 PASSWORD="00000000"  # Standardwert, bei Bedarf anpassen
 CSV_FILE="smart_meter_data.csv"
 POLL_INTERVAL=60     # Abfrageintervall in Sekunden
+DEBUG=1              # Debug-Modus (0=aus, 1=an)
+MAX_RETRY=3          # Maximale Anzahl von Wiederholungsversuchen bei Kommunikationsfehlern
 
 # Protokoll-Konstanten basierend auf dem OpenHAB-Binding
 START_BYTE=0xEE
@@ -114,39 +115,66 @@ function send_message {
     
     # Timeout implementieren
     local start_time=$(date +%s)
-    local timeout=3
+    local timeout=5  # Längerer Timeout
+    local retries=3  # Anzahl der Wiederholungsversuche
+    local retry_count=0
     
-    while (( $(date +%s) - start_time < timeout )); do
-        # Versuche, ein Byte zu lesen
-        dd if="$DEVICE" of="$tmp_response" bs=1 count=1 iflag=nonblock 2>/dev/null
+    # Mehrere Versuche bei fehlender oder falscher Antwort
+    while (( retry_count < retries )); do
+        echo "Warte auf ACK (Versuch $((retry_count+1))/$retries)..." >&2
+        
+        # Mehrere Bytes lesen, um Antworten zu finden
+        dd if="$DEVICE" of="$tmp_response" bs=1 count=10 iflag=nonblock 2>/dev/null
         
         if [[ -s "$tmp_response" ]]; then
-            # Byte als Hex ausgeben
-            local response_hex=$(xxd -p "$tmp_response")
-            local response_dec=$((0x$response_hex))
+            # Hexdump für bessere Diagnose
+            echo "Empfangene Antwort:" >&2
+            hexdump -C "$tmp_response" >&2
             
-            echo "Received response: 0x$response_hex (dec: $response_dec)" >&2
+            # Prüfe jedes Byte nach ACK
+            local found_ack=false
             
-            if [[ "$response_dec" == "6" ]]; then  # ACK = 0x06
+            # Lese einzeln und prüfe auf ACK
+            for i in {0..9}; do
+                local byte_hex=$(dd if="$tmp_response" bs=1 skip=$i count=1 2>/dev/null | xxd -p)
+                if [[ -n "$byte_hex" ]]; then
+                    local byte_dec=$((0x$byte_hex))
+                    
+                    if [[ "$byte_dec" == "6" ]]; then  # ACK = 0x06
+                        echo "ACK (0x06) gefunden an Position $i" >&2
+                        found_ack=true
+                        break
+                    fi
+                fi
+            done
+            
+            if $found_ack; then
                 echo "ACK empfangen" >&2
                 rm -f "$tmp_response"
                 return 0
-            elif [[ "$response_dec" == "21" ]]; then  # NACK = 0x15
-                echo "NACK empfangen" >&2
-                rm -f "$tmp_response"
-                return 1
-            else 
-                echo "Unbekannte Antwort: 0x$response_hex" >&2
-                rm -f "$tmp_response"
-                return 1
+            else
+                echo "Kein ACK in der Antwort gefunden, versuche erneut..." >&2
+                retry_count=$((retry_count + 1))
+                
+                # Leere temporäre Datei
+                > "$tmp_response"
+                
+                if (( retry_count < retries )); then
+                    sleep 0.5
+                    continue
+                fi
             fi
         fi
         
-        # Kurze Pause
-        sleep 0.1
+        echo "Keine Antwort erhalten, versuche erneut..." >&2
+        retry_count=$((retry_count + 1))
+        
+        if (( retry_count < retries )); then
+            sleep 0.5
+        fi
     done
     
-    echo "Timeout beim Warten auf ACK" >&2
+    echo "Keine ACK-Antwort nach $retries Versuchen" >&2
     rm -f "$tmp_response"
     return 1
 }
@@ -321,13 +349,17 @@ function initialize_connection {
         return 1
     fi
     
-    # Serielle Schnittstelle konfigurieren - sehr spezifisch für optische Schnittstellen
-    stty -F $DEVICE 9600 raw cs8 -cstopb -parenb -crtscts -echo -echoe -echok -echoctl -echoke
+    # Verschiedene Konfigurationen testen
+    echo "Teste verschiedene serielle Konfigurationen..." >&2
     
-    # RTS/DTR Signale manipulieren (könnte für optische Schnittstelle wichtig sein)
-    # Wir simulieren die Java-Einstellung RTS=true, DTR=false
+    # Versuch 1 - Basiskonfiguration
+    echo "Konfiguration 1: Basiskonfiguration (9600 8N1)" >&2
+    stty -F $DEVICE 9600 raw cs8 -cstopb -parenb -echo
+    
+    # Reset RTS/DTR Signale
     if command -v stty &>/dev/null; then
-        # Setze RTS high (1), DTR low (0) - könnte für bestimmte Adapter notwendig sein
+        echo "Setze RTS high, DTR low" >&2
+        # Versuche spezielle Signale zu setzen
         stty -F $DEVICE -hupcl
     fi
     
@@ -340,13 +372,15 @@ function initialize_connection {
     # Flush any pending input
     dd if=$DEVICE iflag=nonblock of=/dev/null bs=1 count=1000 2>/dev/null || true
     
-    # Warte einen Moment nach dem Flush
-    sleep 0.5
+    # Sende mehrere Wake-up Signale für bessere Erkennung
+    echo "Sende multiple Wake-up Signale (0x55)..." >&2
+    for i in {1..5}; do
+        echo -ne "\x55" > $DEVICE
+        sleep 0.2
+    done
     
-    # Optisch aktivieren durch Senden eines Wake-up Signals (0x55)
-    echo "Sende Wake-up Signal (0x55)..." >&2
-    echo -ne "\x55" > $DEVICE
-    sleep 0.5
+    # Zusätzliche Pause nach den Wake-up Signalen
+    sleep 1.0
     
     # Sende IDENT-Request
     echo "Sende Ident-Request..." >&2
@@ -451,6 +485,64 @@ function read_table {
     return 0
 }
 
+# Funktion zum Testen verschiedener serieller Konfigurationen
+function test_serial_configs {
+    echo "Teste verschiedene serielle Konfigurationen für $DEVICE..." >&2
+    
+    local configs=(
+        "9600 raw cs8 -cstopb -parenb -echo"
+        "9600 raw cs8 -cstopb -parenb -crtscts -echo"
+        "9600 raw cs8 cstopb -parenb -echo"
+        "9600 raw cs8 -cstopb parenb -echo"
+    )
+    
+    local rts_dtr_settings=(
+        "-hupcl"        # RTS=high, DTR=low
+        "hupcl"         # RTS=low, DTR=high
+        ""              # Standard-Einstellungen
+    )
+    
+    for config in "${configs[@]}"; do
+        for rts_dtr in "${rts_dtr_settings[@]}"; do
+            echo "Versuche Konfiguration: $config $rts_dtr" >&2
+            
+            # Serielle Schnittstelle konfigurieren
+            stty -F $DEVICE $config
+            
+            if [[ -n "$rts_dtr" ]]; then
+                stty -F $DEVICE $rts_dtr
+            fi
+            
+            # Setze Toggle-Control zurück
+            TOGGLE_CONTROL=0
+            
+            # Flush any pending input
+            dd if=$DEVICE iflag=nonblock of=/dev/null bs=1 count=1000 2>/dev/null || true
+            
+            # Warte einen Moment
+            sleep 1
+            
+            # Sende Wake-up Signal
+            echo -ne "\x55" > $DEVICE
+            sleep 0.5
+            
+            # Versuche Ident-Request
+            echo "Sende Test Ident-Request..." >&2
+            if send_message $REQUEST_ID_IDENT; then
+                echo "ERFOLG: Konfiguration funktioniert!" >&2
+                echo "Erfolgreiche Konfiguration: $config $rts_dtr" >&2
+                return 0
+            fi
+            
+            echo "Diese Konfiguration funktioniert nicht, versuche nächste..." >&2
+            sleep 2
+        done
+    done
+    
+    echo "Keine der getesteten Konfigurationen war erfolgreich." >&2
+    return 1
+}
+
 # Hauptfunktion
 function main {
     # CRC-Tabelle generieren
@@ -461,6 +553,10 @@ function main {
     if [[ ! -f "$CSV_FILE" ]]; then
         echo "Timestamp,Fwd_active_energy_kWh,Rev_active_energy_kWh,Fwd_active_power_W,Rev_active_power_W,Import_Reactive_VAr,Export_Reactive_VAr,L1_current_A,L2_current_A,L3_current_A,L1_voltage_V,L2_voltage_V,L3_voltage_V" > "$CSV_FILE"
     fi
+    
+    # Prüfe verschiedene serielle Konfigurationen beim ersten Start
+    echo "Teste serielle Konfigurationen für beste Kommunikation..." >&2
+    test_serial_configs
     
     while true; do
         echo "Starte neue Messung..." >&2
@@ -531,16 +627,23 @@ Optionen:
   -p, --password PWD     Passwort (Standard: $PASSWORD)
   -i, --interval SEC     Aktualisierungsintervall in Sekunden (Standard: $POLL_INTERVAL)
   -o, --output FILE      CSV-Ausgabedatei (Standard: $CSV_FILE)
+  -D, --debug            Debug-Modus aktivieren (mehr Ausgaben)
+  -t, --test-configs     Seriellen Port mit verschiedenen Konfigurationen testen
+  -r, --max-retry NUM    Maximale Anzahl von Wiederholungsversuchen (Standard: $MAX_RETRY)
   -h, --help             Diese Hilfe anzeigen
 
-Beispiel:
+Beispiele:
   $0 --device /dev/ttyUSB0 --password "12345678" --interval 30
+  $0 --debug --test-configs       # Nur serielle Konfigurationen testen
+  $0 --device /dev/ttyUSB1 --debug --max-retry 5
 EOH
     exit 0
 }
 
 # Kommandozeilenargumente verarbeiten
 parse_args() {
+    TEST_CONFIGS_ONLY=0
+    
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -d|--device)
@@ -563,6 +666,18 @@ parse_args() {
                 CSV_FILE="$2"
                 shift 2
                 ;;
+            -D|--debug)
+                DEBUG=1
+                shift
+                ;;
+            -t|--test-configs)
+                TEST_CONFIGS_ONLY=1
+                shift
+                ;;
+            -r|--max-retry)
+                MAX_RETRY="$2"
+                shift 2
+                ;;
             -h|--help)
                 show_help
                 ;;
@@ -572,6 +687,38 @@ parse_args() {
                 ;;
         esac
     done
+}
+
+# Funktion zum Anzeigen von Debug-Informationen
+debug_info() {
+    if [[ "$DEBUG" -eq 1 ]]; then
+        echo "[DEBUG] $@" >&2
+    fi
+}
+
+# Funktion zum Testen des seriellen Ports mit spezifischen Einstellungen
+test_port() {
+    local baud=$1
+    local device=$2
+    
+    echo "Teste serielle Verbindung mit $baud Baud auf $device..." >&2
+    
+    # Verschiedene Einstellungen testen
+    stty -F $device $baud raw cs8 -cstopb -parenb -echo
+    sleep 0.5
+    
+    # Versuche einfache Daten zu senden und zu empfangen
+    echo "Sende Test-Sequenz..." >&2
+    echo -ne "\x55\x55\x55" > $device
+    
+    # Lese Antwort
+    local tmp_file=$(mktemp)
+    dd if=$device of=$tmp_file bs=1 count=10 iflag=nonblock 2>/dev/null
+    
+    echo "Antwort auf Test-Sequenz:" >&2
+    hexdump -C $tmp_file >&2
+    
+    rm -f $tmp_file
 }
 
 # Signal-Handler für saubere Beendigung
@@ -600,7 +747,26 @@ echo "- Benutzername: $USERNAME" >&2
 echo "- Passwort: [versteckt]" >&2
 echo "- Aktualisierungsintervall: $POLL_INTERVAL Sekunden" >&2
 echo "- CSV-Ausgabe: $CSV_FILE" >&2
+echo "- Debug-Modus: $([ "$DEBUG" -eq 1 ] && echo "Ein" || echo "Aus")" >&2
+echo "- Max. Wiederholungsversuche: $MAX_RETRY" >&2
 echo "-------------------------------" >&2
 
-main
+# Führe nur Konfigurationstest aus, wenn dies angefordert wurde
+if [[ "$TEST_CONFIGS_ONLY" -eq 1 ]]; then
+    echo "Nur Test der seriellen Konfigurationen wird durchgeführt..." >&2
+    test_port 9600 $DEVICE
+    # Test der verschiedenen Konfigurationen
+    if test_serial_configs; then
+        echo "Test abgeschlossen, erfolgreich!" >&2
+        exit 0
+    else
+        echo "Test abgeschlossen, keine erfolgreiche Konfiguration gefunden." >&2
+        exit 1
+    fi
+fi
 
+# CRC-Tabelle generieren, bevor main() aufgerufen wird
+generate_crc_table
+
+# Hauptprogramm starten
+main
