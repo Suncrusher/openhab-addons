@@ -973,7 +973,7 @@ scan_all_tables() {
         
         rm -f "$scan_file"
         sleep 0.5
-    }
+    done
     
     # Session beenden
     log_message "Beende Session..."
