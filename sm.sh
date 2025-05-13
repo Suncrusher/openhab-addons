@@ -1,4 +1,15 @@
 #!/bin/bash
+#
+# Hinweise zur Verwendung:
+#
+# 1. Grundlegende Verwendung:
+#     ./smart_meter_reader.sh
+# 2. Mit angepassten Parametern:
+#     ./smart_meter_reader.sh --device /dev/ttyUSB0 --password "Ihr_Passwort" --interval 30
+# 3. Hilfe anzeigen:
+#     ./smart_meter_reader.sh --help
+
+#!/bin/bash
 
 # Smart Meter OSGP Reader Script
 # This script reads data from a smart meter using the C12.18 protocol via an optical interface
@@ -79,143 +90,208 @@ function send_message {
     # Toggle Bit umschalten
     TOGGLE_CONTROL=$((1 - TOGGLE_CONTROL))
     
-    # Paket in Hex formatieren für stty
-    local hex_string=""
+    # Paket in ein temporäres File schreiben und direkt mit dd senden
+    local tmp_file=$(mktemp)
+    
+    # Debug-Ausgabe in Hex-Format
+    echo -n "Sending: " >&2
     for byte in "${packet[@]}"; do
         # Sicherstellen, dass der Wert eine Zahl ist (keine Hex-Strings wie 0xNN)
         if [[ $byte =~ ^0x ]]; then
             byte=$((byte))
         fi
-        printf -v hex_byte "\\\\x%02X" $byte
-        hex_string+=$hex_byte
+        printf "%02X " $byte >&2
+        printf "\\$(printf '%03o' $byte)" >> "$tmp_file"
+    done
+    echo "" >&2
+    
+    # Direkt mit dd senden, um Probleme mit NULL-Bytes zu vermeiden
+    dd if="$tmp_file" of="$DEVICE" bs=1 count=${#packet[@]} 2>/dev/null
+    rm -f "$tmp_file"
+    
+    # Auf ACK warten - verwende dd, um jegliche Byte-Probleme zu vermeiden
+    local tmp_response=$(mktemp)
+    
+    # Timeout implementieren
+    local start_time=$(date +%s)
+    local timeout=3
+    
+    while (( $(date +%s) - start_time < timeout )); do
+        # Versuche, ein Byte zu lesen
+        dd if="$DEVICE" of="$tmp_response" bs=1 count=1 iflag=nonblock 2>/dev/null
+        
+        if [[ -s "$tmp_response" ]]; then
+            # Byte als Hex ausgeben
+            local response_hex=$(xxd -p "$tmp_response")
+            local response_dec=$((0x$response_hex))
+            
+            echo "Received response: 0x$response_hex (dec: $response_dec)" >&2
+            
+            if [[ "$response_dec" == "6" ]]; then  # ACK = 0x06
+                echo "ACK empfangen" >&2
+                rm -f "$tmp_response"
+                return 0
+            elif [[ "$response_dec" == "21" ]]; then  # NACK = 0x15
+                echo "NACK empfangen" >&2
+                rm -f "$tmp_response"
+                return 1
+            else 
+                echo "Unbekannte Antwort: 0x$response_hex" >&2
+                rm -f "$tmp_response"
+                return 1
+            fi
+        fi
+        
+        # Kurze Pause
+        sleep 0.1
     done
     
-    # Debug-Ausgabe
-    echo "Sending: ${hex_string}" >&2
-    
-    # Senden der Nachricht - printf mit einem einzelnen Backslash für die binäre Ausgabe
-    # Konvertiert "\x41" in das tatsächliche Byte 0x41
-    printf "$(echo -e "${hex_string}")" > $DEVICE
-    
-    # Auf ACK warten
-    read -t 2 -N 1 response < $DEVICE 2>/dev/null || { echo "Timeout beim Warten auf ACK" >&2; return 1; }
-    
-    if [[ -z "$response" ]]; then
-        echo "Leere Antwort empfangen" >&2
-        return 1
-    fi
-    
-    response_ascii=$(printf '%d' "'$response")
-    
-    if [[ "$response_ascii" == "6" ]]; then  # ACK = 0x06
-        echo "ACK empfangen" >&2
-        return 0
-    else
-        echo "NACK oder unbekannte Antwort empfangen: ASCII $response_ascii" >&2
-        return 1
-    fi
+    echo "Timeout beim Warten auf ACK" >&2
+    rm -f "$tmp_response"
+    return 1
 }
 
 # Funktion zum Empfangen einer Nachricht
 function receive_message {
+    # Wir verwenden temporäre Dateien, um binäre Daten korrekt zu verarbeiten
+    local header_file=$(mktemp)
+    local body_file=$(mktemp)
+    local full_msg_file=$(mktemp)
+    
     # Timeout für die Antwort
-    local timeout=5
+    local timeout=10
     local start_time=$(date +%s)
-    local data=""
     local found_start=0
 
+    echo "Warte auf Start-Byte (0xEE)..." >&2
+    
     # Warten auf Start-Byte
     while (( $(date +%s) - start_time < timeout )); do
-        read -t 1 -N 1 byte < $DEVICE 2>/dev/null || continue
-        [[ -z "$byte" ]] && continue
-        byte_hex=$(printf '%02X' "'$byte")
+        # Lese ein einzelnes Byte
+        dd if=$DEVICE of=$header_file bs=1 count=1 iflag=nonblock 2>/dev/null
         
-        if [[ "$byte_hex" == "EE" ]]; then
-            data+=$byte
-            found_start=1
-            break
+        if [[ -s "$header_file" ]]; then
+            local byte_hex=$(xxd -p "$header_file")
+            
+            if [[ "$byte_hex" == "ee" ]]; then
+                echo "Start-Byte (0xEE) gefunden" >&2
+                found_start=1
+                cat $header_file > $full_msg_file
+                break
+            else
+                echo "Unerwartetes Byte: 0x$byte_hex, warte weiter..." >&2
+                > $header_file  # Datei leeren für nächsten Versuch
+            fi
         fi
+        
+        sleep 0.1
     done
 
     if [[ $found_start -eq 0 ]]; then
         echo "Timeout bei Empfang des Start-Bytes" >&2
+        rm -f "$header_file" "$body_file" "$full_msg_file"
         return 1
     fi
     
-    # Lese Identity und Control
-    read -t 2 -N 2 bytes < $DEVICE 2>/dev/null || { echo "Fehler beim Lesen von Identity und Control" >&2; return 1; }
-    [[ -z "$bytes" ]] && { echo "Leere Bytes empfangen für Identity und Control" >&2; return 1; }
-    data+=$bytes
+    # Lese Identity, Control, und Länge (4 Bytes)
+    dd if=$DEVICE of=$header_file bs=1 count=4 2>/dev/null || { 
+        echo "Fehler beim Lesen des Headers" >&2
+        rm -f "$header_file" "$body_file" "$full_msg_file"
+        return 1
+    }
     
-    # Lese Länge (2 Bytes)
-    read -t 2 -N 2 length_bytes < $DEVICE 2>/dev/null || { echo "Fehler beim Lesen der Längenangabe" >&2; return 1; }
-    [[ -z "$length_bytes" ]] && { echo "Leere Bytes empfangen für Längenangabe" >&2; return 1; }
-    data+=$length_bytes
+    # Header zum vollständigen Nachrichten-File hinzufügen
+    cat $header_file >> $full_msg_file
     
-    # Konvertiere die beiden Bytes in eine Längenangabe (Little Endian)
-    length_byte1=$(printf '%d' "'${length_bytes:0:1}")
-    length_byte2=$(printf '%d' "'${length_bytes:1:1}")
-    length=$((length_byte1 + length_byte2 * 256))
+    # Header analysieren
+    local control=$(hexdump -s 2 -n 1 -e '"%d"' $header_file)
+    local length_bytes=$(dd if=$header_file bs=1 skip=3 count=2 2>/dev/null | xxd -p)
     
-    echo "Empfange Payload mit Länge $length..." >&2
-    
-    # Lese Daten gemäß der Länge
-    if [[ $length -gt 0 ]]; then
-        read -t 5 -N $length payload < $DEVICE 2>/dev/null || { echo "Fehler beim Lesen des Payloads" >&2; return 1; }
-        [[ ${#payload} -ne $length ]] && { echo "Unvollständiger Payload empfangen: ${#payload} von $length Bytes" >&2; return 1; }
-        data+=$payload
+    # Länge berechnen (Little Endian)
+    if [[ ${#length_bytes} -eq 4 ]]; then
+        length_byte1=$((0x${length_bytes:0:2}))
+        length_byte2=$((0x${length_bytes:2:2}))
+        length=$((length_byte1 + length_byte2 * 256))
+    else
+        echo "Fehler bei der Längenberechnung: $length_bytes" >&2
+        length=0
     fi
     
-    # Lese CRC (2 Bytes)
-    read -t 2 -N 2 crc_bytes < $DEVICE 2>/dev/null || { echo "Fehler beim Lesen des CRC" >&2; return 1; }
-    [[ -z "$crc_bytes" ]] && { echo "Leere Bytes empfangen für CRC" >&2; return 1; }
-    data+=$crc_bytes
+    echo "Control: $control, Payload-Länge: $length Bytes" >&2
     
-    # Sende ACK zurück
-    echo -ne "\x06" > $DEVICE
+    # Lese Daten gemäß der Länge plus CRC (2 Bytes)
+    dd if=$DEVICE of=$body_file bs=1 count=$((length+2)) 2>/dev/null
     
-    # Gebe die empfangenen Daten zurück
-    echo "$data"
+    # Zum vollständigen Nachrichten-File hinzufügen
+    cat $body_file >> $full_msg_file
+    
+    echo "Nachricht empfangen, sende ACK..." >&2
+    
+    # Sende ACK zurück mit dd
+    printf '\x06' | dd of=$DEVICE 2>/dev/null
+    
+    # Debug: Vollständige Nachricht
+    echo "Empfangene Nachricht:" >&2
+    hexdump -C $full_msg_file >&2
+    
+    # Base64-kodierte Daten zurückgeben (sicherer für Binärdaten)
+    base64 $full_msg_file
+    
+    # Temporäre Dateien löschen
+    rm -f "$header_file" "$body_file" "$full_msg_file"
 }
 
 # Funktion zum Parsen der Tabellenantwort
 function parse_table_data {
-    local data="$1"
+    local base64_data="$1"
     local table="$2"
     
-    # Speichere Daten temporär in einer Datei für hexdump
+    # Dekodiere Base64-Daten in eine temporäre Binärdatei
     local tmp_file=$(mktemp)
-    echo -n "$data" > "$tmp_file"
+    echo "$base64_data" | base64 -d > "$tmp_file"
     
     # Debug
-    echo "Empfangene Datenlänge: ${#data} Bytes" >&2
-    echo "Hexdump der empfangenen Daten:" >&2
+    echo "Empfangene Daten (dekodiert):" >&2
     hexdump -C "$tmp_file" >&2
     
     # Hier müssen die Bytes ab Position 6 (nach Header) geparst werden
+    # Byte 6: Response Code
+    # Byte 7: Table ID
+    # Ab Byte 8: Tabellendaten
+    
+    # Achten Sie auf die Byte-Reihenfolge (jetzt binary safe durch temporäre Dateien)
     if [[ "$table" == "23" ]]; then
         # Tabelle 23: Vorwärts- und rückwärts aktive Energie
         # Position 8 startet nach Header (6) + Response Code (1) + Table ID (1)
-        fwd_energy=$(hexdump -s 7 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
-        rev_energy=$(hexdump -s 11 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
+        
+        # Die Daten sollten Big-Endian sein, daher little-endian in hexdump
+        # format string spezifizieren: '%d' für decimal-Output, Gruppierung in 4-Byte-Blöcke
+        fwd_energy=$(hexdump -s 8 -n 4 -e '1 "">>"" 4/1 "%u"' "$tmp_file" 2>/dev/null || echo 0)
+        rev_energy=$(hexdump -s 12 -n 4 -e '1 "">>"" 4/1 "%u"' "$tmp_file" 2>/dev/null || echo 0)
+        
+        echo "Rohe Zählerwerte: FWD=$fwd_energy REV=$rev_energy" >&2
         
         fwd_energy_kwh=$(echo "scale=3; $fwd_energy/1000.0" | bc)
         rev_energy_kwh=$(echo "scale=3; $rev_energy/1000.0" | bc)
         
         echo "Vorwärts aktive Energie: $fwd_energy_kwh kWh, Rückwärts aktive Energie: $rev_energy_kwh kWh" >&2
         echo "$fwd_energy_kwh,$rev_energy_kwh,,,,,,,,"
+        
     elif [[ "$table" == "28" ]]; then
         # Tabelle 28: Aktuelle Leistungs- und Spannungswerte
-        fwd_power=$(hexdump -s 7 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
-        rev_power=$(hexdump -s 11 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
-        import_reactive=$(hexdump -s 15 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
-        export_reactive=$(hexdump -s 19 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
-        l1_current=$(hexdump -s 23 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
-        l2_current=$(hexdump -s 27 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
-        l3_current=$(hexdump -s 31 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
-        l1_voltage=$(hexdump -s 35 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
-        l2_voltage=$(hexdump -s 39 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
-        l3_voltage=$(hexdump -s 43 -n 4 -v -e '1/4 "%d"' "$tmp_file" || echo 0)
+        # Für jedes 4-Byte-Wort nutzen wir separate hexdump-Aufrufe für mehr Kontrolle
+        fwd_power=$(hexdump -s 8 -n 4 -e '1 "">>"" 4/1 "%u"' "$tmp_file" 2>/dev/null || echo 0)
+        rev_power=$(hexdump -s 12 -n 4 -e '1 "">>"" 4/1 "%u"' "$tmp_file" 2>/dev/null || echo 0)
+        import_reactive=$(hexdump -s 16 -n 4 -e '1 "">>"" 4/1 "%u"' "$tmp_file" 2>/dev/null || echo 0)
+        export_reactive=$(hexdump -s 20 -n 4 -e '1 "">>"" 4/1 "%u"' "$tmp_file" 2>/dev/null || echo 0)
+        l1_current=$(hexdump -s 24 -n 4 -e '1 "">>"" 4/1 "%u"' "$tmp_file" 2>/dev/null || echo 0)
+        l2_current=$(hexdump -s 28 -n 4 -e '1 "">>"" 4/1 "%u"' "$tmp_file" 2>/dev/null || echo 0)
+        l3_current=$(hexdump -s 32 -n 4 -e '1 "">>"" 4/1 "%u"' "$tmp_file" 2>/dev/null || echo 0)
+        l1_voltage=$(hexdump -s 36 -n 4 -e '1 "">>"" 4/1 "%u"' "$tmp_file" 2>/dev/null || echo 0)
+        l2_voltage=$(hexdump -s 40 -n 4 -e '1 "">>"" 4/1 "%u"' "$tmp_file" 2>/dev/null || echo 0)
+        l3_voltage=$(hexdump -s 44 -n 4 -e '1 "">>"" 4/1 "%u"' "$tmp_file" 2>/dev/null || echo 0)
+        
+        echo "Rohe Leistungswerte: FWD=$fwd_power REV=$rev_power" >&2
         
         l1_current_a=$(echo "scale=3; $l1_current/1000.0" | bc)
         l2_current_a=$(echo "scale=3; $l2_current/1000.0" | bc)
@@ -237,17 +313,40 @@ function parse_table_data {
 
 # Funktion zum Initialisieren der Verbindung
 function initialize_connection {
-    # Serielle Schnittstelle konfigurieren
-    stty -F $DEVICE raw 9600 cs8 -cstopb -parenb -echo
+    echo "Konfiguriere serielle Schnittstelle $DEVICE..." >&2
+    
+    # Prüfe, ob das Gerät existiert
+    if [[ ! -e "$DEVICE" ]]; then
+        echo "FEHLER: Gerät $DEVICE existiert nicht!" >&2
+        return 1
+    fi
+    
+    # Serielle Schnittstelle konfigurieren - sehr spezifisch für optische Schnittstellen
+    stty -F $DEVICE 9600 raw cs8 -cstopb -parenb -crtscts -echo -echoe -echok -echoctl -echoke
+    
+    # RTS/DTR Signale manipulieren (könnte für optische Schnittstelle wichtig sein)
+    # Wir simulieren die Java-Einstellung RTS=true, DTR=false
+    if command -v stty &>/dev/null; then
+        # Setze RTS high (1), DTR low (0) - könnte für bestimmte Adapter notwendig sein
+        stty -F $DEVICE -hupcl
+    fi
     
     # Warte einen Moment, bis die Schnittstelle bereit ist
-    sleep 1
+    sleep 2
     
     # Setze Toggle-Control zurück
     TOGGLE_CONTROL=0
     
     # Flush any pending input
     dd if=$DEVICE iflag=nonblock of=/dev/null bs=1 count=1000 2>/dev/null || true
+    
+    # Warte einen Moment nach dem Flush
+    sleep 0.5
+    
+    # Optisch aktivieren durch Senden eines Wake-up Signals (0x55)
+    echo "Sende Wake-up Signal (0x55)..." >&2
+    echo -ne "\x55" > $DEVICE
+    sleep 0.5
     
     # Sende IDENT-Request
     echo "Sende Ident-Request..." >&2
@@ -393,6 +492,115 @@ function main {
     done
 }
 
+# Funktion zum Überprüfen der Abhängigkeiten
+check_dependencies() {
+    local missing=0
+    for cmd in dd hexdump stty xxd base64 bc; do
+        if ! command -v $cmd &>/dev/null; then
+            echo "FEHLER: Benötigtes Programm '$cmd' nicht gefunden. Bitte installieren." >&2
+            missing=1
+        fi
+    done
+    
+    if [[ $missing -eq 1 ]]; then
+        echo "Unter Debian/Ubuntu können Sie die fehlenden Programme mit installieren:" >&2
+        echo "sudo apt-get install coreutils bsdextra util-linux xxd base64 bc" >&2
+        exit 1
+    fi
+    
+    # Überprüfe Zugriff auf serielle Schnittstelle
+    if [[ ! -r "$DEVICE" || ! -w "$DEVICE" ]]; then
+        echo "FEHLER: Keine Lese-/Schreibrechte für $DEVICE" >&2
+        echo "Führen Sie das Skript mit sudo aus oder fügen Sie Ihren Benutzer zur dialout-Gruppe hinzu:" >&2
+        echo "sudo usermod -a -G dialout \$USER" >&2
+        echo "Danach müssen Sie sich ab- und wieder anmelden." >&2
+        exit 1
+    fi
+}
+
+# Funktion zum Anzeigen der Hilfe
+show_help() {
+    cat <<EOH
+Smart Meter OSGP Reader
+
+Verwendung: $0 [Optionen]
+
+Optionen:
+  -d, --device DEVICE    Serielles Gerät (Standard: $DEVICE)
+  -u, --user USERNAME    Benutzername (Standard: $USERNAME)
+  -p, --password PWD     Passwort (Standard: $PASSWORD)
+  -i, --interval SEC     Aktualisierungsintervall in Sekunden (Standard: $POLL_INTERVAL)
+  -o, --output FILE      CSV-Ausgabedatei (Standard: $CSV_FILE)
+  -h, --help             Diese Hilfe anzeigen
+
+Beispiel:
+  $0 --device /dev/ttyUSB0 --password "12345678" --interval 30
+EOH
+    exit 0
+}
+
+# Kommandozeilenargumente verarbeiten
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -d|--device)
+                DEVICE="$2"
+                shift 2
+                ;;
+            -u|--user)
+                USERNAME="$2"
+                shift 2
+                ;;
+            -p|--password)
+                PASSWORD="$2"
+                shift 2
+                ;;
+            -i|--interval)
+                POLL_INTERVAL="$2"
+                shift 2
+                ;;
+            -o|--output)
+                CSV_FILE="$2"
+                shift 2
+                ;;
+            -h|--help)
+                show_help
+                ;;
+            *)
+                echo "Unbekannte Option: $1"
+                show_help
+                ;;
+        esac
+    done
+}
+
+# Signal-Handler für saubere Beendigung
+cleanup() {
+    echo -e "\nBeende Smart Meter OSGP Reader..."
+    terminate_connection
+    exit 0
+}
+
+# Trap für CTRL+C
+trap cleanup SIGINT SIGTERM
+
 # Skript starten
 echo "Smart Meter OSGP Reader gestartet" >&2
+echo "-------------------------------" >&2
+
+# Argumente parsen
+parse_args "$@"
+
+# Abhängigkeiten prüfen
+check_dependencies
+
+echo "Konfiguration:" >&2
+echo "- Gerät: $DEVICE" >&2
+echo "- Benutzername: $USERNAME" >&2
+echo "- Passwort: [versteckt]" >&2
+echo "- Aktualisierungsintervall: $POLL_INTERVAL Sekunden" >&2
+echo "- CSV-Ausgabe: $CSV_FILE" >&2
+echo "-------------------------------" >&2
+
 main
+
