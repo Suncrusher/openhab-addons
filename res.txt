@@ -1,204 +1,22 @@
-TABELLE 0000: NICHT VERFÜGBAR (NACK)
------ TABELLE 0001: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 01 00                           |.....0..|
-00000008
-
------ TABELLE 0002: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 02 00                           |.....0..|
-00000008
-
------ TABELLE 0003: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 03 00                           |.....0..|
-00000008
-
-TABELLE 0004: NICHT VERFÜGBAR (NACK)
------ TABELLE 0005: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 05 00                           |.....0..|
-00000008
-
------ TABELLE 0006: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 06 00                           |.....0..|
-00000008
-
------ TABELLE 0007: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 07 00                           |.....0..|
-00000008
-
-TABELLE 0008: NICHT VERFÜGBAR (NACK)
------ TABELLE 0009: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 09 00                           |.....0..|
-00000008
-
------ TABELLE 000A: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 0a 00                           |.....0..|
-00000008
-
-TABELLE 000B: NICHT VERFÜGBAR (NACK)
------ TABELLE 000C: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 0c 00                           |.....0..|
-00000008
-
------ TABELLE 000D: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 0d 00                           |.....0..|
-00000008
-
------ TABELLE 000E: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 0e 00                           |.....0..|
-00000008
-
-TABELLE 000F: NICHT VERFÜGBAR (NACK)
------ TABELLE 0010: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 10 00                           |.....0..|
-00000008
-
------ TABELLE 0011: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 11 00                           |.....0..|
-00000008
-
------ TABELLE 0012: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 12 00                           |.....0..|
-00000008
-
-TABELLE 0013: NICHT VERFÜGBAR (NACK)
------ TABELLE 0014: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 14 00                           |.....0..|
-00000008
-
-TABELLE 0015: NICHT VERFÜGBAR (NACK)
------ TABELLE 0016: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 16 00                           |.....0..|
-00000008
-
-TABELLE 0017: NICHT VERFÜGBAR (NACK)
------ TABELLE 0018: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 18 00                           |.....0..|
-00000008
-
------ TABELLE 0019: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 19 00                           |.....0..|
-00000008
-
------ TABELLE 001A: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 1a 00                           |.....0..|
-00000008
-
-TABELLE 001B: NICHT VERFÜGBAR (NACK)
------ TABELLE 001C: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 1c 00                           |.....0..|
-00000008
-
------ TABELLE 001D: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 1d 00                           |.....0..|
-00000008
-
------ TABELLE 001E: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 1e 00                           |.....0..|
-00000008
-
-TABELLE 001F: NICHT VERFÜGBAR (NACK)
------ TABELLE 0020: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 20 00                           |.....0 .|
-00000008
-
------ TABELLE 0021: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 21 00                           |.....0!.|
-00000008
-
------ TABELLE 0022: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 22 00                           |.....0".|
-00000008
-
-TABELLE 0023: NICHT VERFÜGBAR (NACK)
------ TABELLE 0024: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 24 00                           |.....0$.|
-00000008
-
------ TABELLE 0025: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 25 00                           |.....0%.|
-00000008
-
------ TABELLE 0026: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 26 00                           |.....0&.|
-00000008
-
-TABELLE 0027: NICHT VERFÜGBAR (NACK)
------ TABELLE 0028: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 28 00                           |.....0(.|
-00000008
-
------ TABELLE 0029: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 29 00                           |.....0).|
-00000008
-
------ TABELLE 002A: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 2a 00                           |.....0*.|
-00000008
-
-TABELLE 002B: NICHT VERFÜGBAR (NACK)
------ TABELLE 002C: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 2c 00                           |.....0,.|
-00000008
-
------ TABELLE 002D: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 2d 00                           |.....0-.|
-00000008
-
------ TABELLE 002E: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 2e 00                           |.....0..|
-00000008
-
-TABELLE 002F: NICHT VERFÜGBAR (NACK)
------ TABELLE 0030: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 30 00                           |.....00.|
-00000008
-
------ TABELLE 0031: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 31 00                           |.....01.|
-00000008
-
------ TABELLE 0032: -----
-Bytes: 8
-00000000  c0 06 00 03 00 30 32 00                           |.....02.|
-00000008
-
-
-===============================
-Scan abgeschlossen: Di 13. Mai 23:51:47 CEST 2025
-Gescannte Tabellen: 51
-Tabellen mit Daten: 37
+Tabellenscan-Modus aktiviert
+[2025-05-14 00:23:32] Smart Meter Logger gestartet
+[2025-05-14 00:23:32] Gerät: /dev/ttyUSB0, Intervall: 60 Sekunden
+[2025-05-14 00:23:32] Serielle Schnittstelle konfiguriert: 9600 raw cs8 -cstopb -parenb -echo -hupcl -ixoff -ixon
+stty: /dev/ttyUSB0: es ist nicht möglich, alle angeforderten Operationen durchzuführen
+[2025-05-14 00:23:33] Serielle Schnittstelle zurückgesetzt und neu konfiguriert
+[2025-05-14 00:23:33] DEBUG-MODUS: Führe einmaligen Tabellenscan durch
+[2025-05-14 00:23:33] Starte vollständigen Tabellenscan... Ausgabe wird in /home/openhabian/table_scan.txt gespeichert
+[2025-05-14 00:23:33] Sende initiale Wake-up Sequenz für den Scan...
+Sende: 55 55 55 55 55
+Sende: 55 55 55 55 55
+Sende: 55 55 55 55 55
+Sende: 55 55 55 55 55
+Sende: 55 55 55 55 55
+[2025-05-14 00:23:37] Initialisiere Verbindung zum Zähler...
+[2025-05-14 00:23:37] Sende Request-ID: 0x20
+Sende: EE 00 00 00 01 00 20 17 53
+[2025-05-14 00:23:37] Unerwartete Antwort: 0xFF
+[2025-05-14 00:23:38] Keine Antwort erhalten, Versuch 2 von 3
+[2025-05-14 00:23:39] Keine Antwort erhalten, Versuch 3 von 3
+[2025-05-14 00:23:40] Keine ACK-Antwort nach 3 Versuchen
+[2025-05-14 00:23:40] FEHLER: Ident-Request fehlgeschlagen. Breche Scan ab.
