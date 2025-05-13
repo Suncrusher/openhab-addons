@@ -95,8 +95,10 @@ function test_9600_baud_options {
                             sleep 2
                             echo -ne "/?E\\r\\n" > $DEVICE    # Mode E (direkt mit höherer Baudrate)
                         else
-                            # Standard ANSI C12.18 Format
-                            echo -ne "$(printf "\\x%02x\\x%02x\\x00\\x00\\x01\\x00\\x20" $start_byte $identity_byte)" > $DEVICE
+                            # Standard ANSI C12.18 Format - Sichere Formatierung
+                            start_byte_fmt=$(printf "\\x%02x" $start_byte)
+                            id_byte_fmt=$(printf "\\x%02x" $identity_byte)
+                            echo -ne "$start_byte_fmt$id_byte_fmt\x00\x00\x01\x00\x20" > $DEVICE
                             
                             # Bei passwortgeschützter Kommunikation versuchen wir auch einen Authentifizierungsversuch
                             if [[ $start_byte == "0xEE" ]]; then
@@ -107,13 +109,21 @@ function test_9600_baud_options {
                                 password_hex=""
                                 for (( i=0; i<${#PASSWORD}; i++ )); do
                                     char="${PASSWORD:$i:1}"
-                                    hex_val=$(printf "%02x" "'$char")
+                                    # Vermeide printf Fehler mit einfachen Anführungszeichen
+                                    hex_val=$(printf "%02x" "'$char" 2>/dev/null || printf "%02x" "'?")
                                     password_hex+="\x$hex_val"
                                 done
                                 
                                 # Passwortlänge berechnen
                                 password_len=${#PASSWORD}
-                                echo -ne "$(printf "\\x%02x\\x%02x\\x00\\x00\\x%02x\\x00\\x50%s" $start_byte $identity_byte $password_len "$password_hex")" > $DEVICE
+                                
+                                # Erstelle die Bytes einzeln und füge sie zusammen
+                                start_byte_fmt=$(printf "\\x%02x" $start_byte)
+                                id_byte_fmt=$(printf "\\x%02x" $identity_byte)
+                                len_byte_fmt=$(printf "\\x%02x" $password_len)
+                                
+                                # Stelle den LOGON-Request zusammen
+                                echo -ne "$start_byte_fmt$id_byte_fmt\x00\x00$len_byte_fmt\x00\x50$password_hex" > $DEVICE
                             fi
                         fi
                         sleep 1
@@ -149,7 +159,10 @@ function test_9600_baud_options {
                                 
                                 # Versuche mit anderem Request-Typ
                                 echo "Versuche mit NEGOTIATE-Request (0x61)..."
-                                echo -ne "$(printf "\\x%02x\\x%02x\\x00\\x00\\x01\\x00\\x61" $start_byte $identity_byte)" > $DEVICE
+                                # Sichere Formatierung
+                                start_byte_fmt=$(printf "\\x%02x" $start_byte)
+                                id_byte_fmt=$(printf "\\x%02x" $identity_byte)
+                                echo -ne "$start_byte_fmt$id_byte_fmt\x00\x00\x01\x00\x61" > $DEVICE
                                 sleep 1
                                 
                                 # Empfange Antwort
