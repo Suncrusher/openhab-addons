@@ -1,27 +1,50 @@
-Smart Meter OSGP Reader gestartet
--------------------------------
-Konfiguration:
-- Gerät: /dev/ttyUSB0
-- Benutzername: 00000000
-- Passwort: [versteckt]
-- Aktualisierungsintervall: 30 Sekunden
-- CSV-Ausgabe: smart_meter_data.csv
-- Debug-Modus: Ein
-- Max. Wiederholungsversuche: 3
--------------------------------
-Generiere CRC-Tabelle...
-Teste serielle Konfigurationen für beste Kommunikation...
-Teste verschiedene serielle Konfigurationen für /dev/ttyUSB0...
-Versuche Konfiguration: 9600 raw cs8 -cstopb -parenb -echo -hupcl
-Sende Test Ident-Request...
-Sending: EE 00 00 00 01 00 20 17 53
-Warte auf ACK (Versuch 1/3)...
-Empfangene Antwort:
-00000000  ff 00 00 00 01 00 20 17  53 15                    |...... .S.|
-0000000a
-Kein ACK in der Antwort gefunden, versuche erneut...
-Warte auf ACK (Versuch 2/3)...
-Keine Antwort erhalten, versuche erneut...
-Warte auf ACK (Versuch 3/3)...
-Keine Antwort erhalten, versuche erneut...
-Keine ACK-Antwort nach 3 Versuchen
+Smart Meter IEC 62056-21 und ANSI C12.18/19 Test-Script
+====================================================
+Gerät: /dev/ttyUSB0
+Testet Kommunikation gemäß IEC 62056-21 und ANSI C12.18/19
+
+IEC 62056-21 Test für optische Schnittstelle
+-----------------------------------------
+Teste IEC 62056-21 Mode A...
+Sende Request-Message für Mode A...
+Teste IEC 62056-21 Mode B...
+Sende Request-Message für Mode B...
+Teste IEC 62056-21 Mode C...
+Sende Request-Message für Mode C...
+Teste IEC 62056-21 Mode D...
+Sende Request-Message für Mode D...
+Teste IEC 62056-21 Mode E...
+Sende Request-Message für Mode E...
+Versuche Mode E mit Passwort...
+Keine erfolgreiche IEC 62056-21 Konfiguration gefunden.
+Teste ANSI C12.19 Tabellenzugriffe
+--------------------------------
+Versuche Authentifizierung mit Passwort: e329b0428c16c74c0125
+./iec_62056_21_test.sh: Zeile 201: printf: Fehlende hexadezimale Ziffer nach \x.
+
+Tests abgeschlossen.
+Prüfen Sie die Ausgabe auf erfolgreiche Konfigurationen.
+openhabian@openhabian:~ $ ./smart_meter_9600_test.sh --password e329b0428c16c74c0125
+Verwende Passwort: e329b0428c16c74c0125
+Smart Meter 9600 Baud Test-Script
+===============================
+Gerät: /dev/ttyUSB0
+Testet verschiedene Kommunikationsoptionen mit 9600 Baud
+
+Spezifischer Test für 9600 Baud (Standard laut Handbuch)
+------------------------------------------------------
+Teste 9600 Baud mit: -parenb  -cstopb
+Sende erweiterte Wake-up Sequenz...
+Teste mit Start-Byte: 0xEE, Identity-Byte: 0x00
+./smart_meter_9600_test.sh: Zeile 99: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 99: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 99: Warnung: Kommandoersetzung: NULL-Byte in der Eingabe ignoriert.
+Versuche Authentifizierung mit Standard-Passwort...
+./smart_meter_9600_test.sh: Zeile 116: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 116: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 116: printf: Fehlende hexadezimale Ziffer nach \x.
+./smart_meter_9600_test.sh: Zeile 116: Warnung: Kommandoersetzung: NULL-Byte in der Eingabe ignoriert.
+Antwort erhalten:
+00000000  ff 00 14 50 65 33 32 39  62 30 34 32 38 43 30 36  |...Pe329b0428C06|
+00000010  63 37 34 63                                       |c74c|
+00000014
