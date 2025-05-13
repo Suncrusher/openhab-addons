@@ -1,8 +1,19 @@
 Smart Meter OSGP Reader gestartet
+-------------------------------
+Konfiguration:
+- Gerät: /dev/ttyUSB0
+- Benutzername: 00000000
+- Passwort: [versteckt]
+- Aktualisierungsintervall: 30 Sekunden
+- CSV-Ausgabe: smart_meter_data.csv
+-------------------------------
 Generiere CRC-Tabelle...
 Starte neue Messung...
+Konfiguriere serielle Schnittstelle /dev/ttyUSB0...
+Sende Wake-up Signal (0x55)...
 Sende Ident-Request...
-Sending: \xEE\x00\x00\x00\x01\x00\x20\x17\x53
-./sm.sh: Zeile 98: Warnung: Kommandoersetzung: NULL-Byte in der Eingabe ignoriert.
-NACK oder unbekannte Antwort empfangen: ASCII 255
+Sending: EE 00 00 00 01 00 20 17 53
+Received response: 0xff (dec: 255)
+Unbekannte Antwort: 0xff
 FEHLER: Ident-Request fehlgeschlagen
+FEHLER: Verbindungsaufbau fehlgeschlagen, versuche erneut in 30 Sekunden
