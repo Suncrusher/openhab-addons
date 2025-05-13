@@ -131,10 +131,12 @@ function send_message {
             echo "Empfangene Antwort:" >&2
             hexdump -C "$tmp_response" >&2
             
-            # Prüfe jedes Byte nach ACK
+            # Prüfe jedes Byte auf ACK oder NACK
             local found_ack=false
+            local found_nack=false
+            local nack_position=-1
             
-            # Lese einzeln und prüfe auf ACK
+            # Lese einzeln und prüfe auf ACK oder NACK
             for i in {0..9}; do
                 local byte_hex=$(dd if="$tmp_response" bs=1 skip=$i count=1 2>/dev/null | xxd -p)
                 if [[ -n "$byte_hex" ]]; then
@@ -144,6 +146,11 @@ function send_message {
                         echo "ACK (0x06) gefunden an Position $i" >&2
                         found_ack=true
                         break
+                    elif [[ "$byte_dec" == "21" ]]; then  # NACK = 0x15 (21 dezimal)
+                        echo "NACK (0x15) gefunden an Position $i" >&2
+                        found_nack=true
+                        nack_position=$i
+                        # Bei NACK nicht sofort abbrechen - eventuell kommt noch ein ACK
                     fi
                 fi
             done
@@ -152,8 +159,24 @@ function send_message {
                 echo "ACK empfangen" >&2
                 rm -f "$tmp_response"
                 return 0
+            elif $found_nack; then
+                echo "NACK empfangen - Protokollfehler oder falsche Baudrate?" >&2
+                echo "Analyse des NACK-Kontexts:" >&2
+                
+                # Zeige Bytes vor und nach NACK für bessere Diagnose
+                if [[ $nack_position -gt 0 ]]; then
+                    local pre_nack=$(dd if="$tmp_response" bs=1 count=$nack_position 2>/dev/null | xxd -p)
+                    echo "Bytes vor NACK: $pre_nack" >&2
+                fi
+                
+                if [[ $nack_position -lt 9 ]]; then
+                    local post_nack=$(dd if="$tmp_response" bs=1 skip=$((nack_position+1)) 2>/dev/null | xxd -p)
+                    echo "Bytes nach NACK: $post_nack" >&2
+                fi
+                
+                retry_count=$((retry_count + 1))
             else
-                echo "Kein ACK in der Antwort gefunden, versuche erneut..." >&2
+                echo "Kein ACK/NACK in der Antwort gefunden, versuche erneut..." >&2
                 retry_count=$((retry_count + 1))
                 
                 # Leere temporäre Datei
@@ -179,7 +202,7 @@ function send_message {
     return 1
 }
 
-# Funktion zum Empfangen einer Nachricht
+# Adaptives Start-Byte Erkennen in receive_message
 function receive_message {
     # Wir verwenden temporäre Dateien, um binäre Daten korrekt zu verarbeiten
     local header_file=$(mktemp)
@@ -190,10 +213,18 @@ function receive_message {
     local timeout=10
     local start_time=$(date +%s)
     local found_start=0
+    local start_byte_hex=""
 
-    echo "Warte auf Start-Byte (0xEE)..." >&2
+    # Umwandlung des START_BYTE in Hex für Vergleiche
+    if [[ "$START_BYTE" =~ ^0x ]]; then
+        start_byte_hex=$(printf "%02x" $START_BYTE)
+    else
+        start_byte_hex=$(printf "%02x" $(($START_BYTE)))
+    fi
     
-    # Warten auf Start-Byte
+    echo "Warte auf Start-Byte (0x${start_byte_hex^^})..." >&2
+    
+    # Warten auf Start-Byte mit adaptiver Erkennung
     while (( $(date +%s) - start_time < timeout )); do
         # Lese ein einzelnes Byte
         dd if=$DEVICE of=$header_file bs=1 count=1 iflag=nonblock 2>/dev/null
@@ -201,13 +232,30 @@ function receive_message {
         if [[ -s "$header_file" ]]; then
             local byte_hex=$(xxd -p "$header_file")
             
-            if [[ "$byte_hex" == "ee" ]]; then
-                echo "Start-Byte (0xEE) gefunden" >&2
+            # Prüfen ob das empfangene Byte dem erwarteten Start-Byte entspricht
+            if [[ "$byte_hex" == "$start_byte_hex" ]]; then
+                echo "Start-Byte (0x${start_byte_hex^^}) gefunden" >&2
+                found_start=1
+                cat $header_file > $full_msg_file
+                break
+            # Alternativ prüfen wir auf andere mögliche Start-Bytes 
+            elif [[ "$byte_hex" == "ee" && "$start_byte_hex" != "ee" ]]; then
+                echo "Alternatives Start-Byte 0xEE gefunden statt 0x${start_byte_hex^^}, akzeptiere..." >&2
+                found_start=1
+                cat $header_file > $full_msg_file
+                break
+            elif [[ "$byte_hex" == "ff" && "$start_byte_hex" != "ff" ]]; then
+                echo "Alternatives Start-Byte 0xFF gefunden statt 0x${start_byte_hex^^}, akzeptiere..." >&2
+                found_start=1
+                cat $header_file > $full_msg_file
+                break
+            elif [[ "$byte_hex" == "01" && "$start_byte_hex" != "01" ]]; then
+                echo "Alternatives Start-Byte 0x01 gefunden statt 0x${start_byte_hex^^}, akzeptiere..." >&2
                 found_start=1
                 cat $header_file > $full_msg_file
                 break
             else
-                echo "Unerwartetes Byte: 0x$byte_hex, warte weiter..." >&2
+                echo "Unerwartetes Byte: 0x${byte_hex^^}, warte weiter..." >&2
                 > $header_file  # Datei leeren für nächsten Versuch
             fi
         fi
@@ -349,18 +397,28 @@ function initialize_connection {
         return 1
     fi
     
-    # Verschiedene Konfigurationen testen
-    echo "Teste verschiedene serielle Konfigurationen..." >&2
-    
-    # Versuch 1 - Basiskonfiguration
-    echo "Konfiguration 1: Basiskonfiguration (9600 8N1)" >&2
-    stty -F $DEVICE 9600 raw cs8 -cstopb -parenb -echo
-    
-    # Reset RTS/DTR Signale
-    if command -v stty &>/dev/null; then
-        echo "Setze RTS high, DTR low" >&2
-        # Versuche spezielle Signale zu setzen
-        stty -F $DEVICE -hupcl
+    # Prüfe, ob gespeicherte Konfiguration vorhanden ist
+    if load_saved_config; then
+        echo "Verwende gespeicherte Konfiguration: $SUCCESSFUL_CONFIG" >&2
+        echo "Verwende gespeichertes Start-Byte: $SUCCESSFUL_START_BYTE" >&2
+        
+        # Setze das gespeicherte Start-Byte
+        START_BYTE=$SUCCESSFUL_START_BYTE
+        
+        # Konfiguriere serielle Schnittstelle mit gespeicherten Einstellungen
+        stty -F $DEVICE $SUCCESSFUL_CONFIG
+    else
+        # Keine Konfiguration gefunden, verwende Standardeinstellungen
+        echo "Keine gespeicherte Konfiguration gefunden, verwende Standardeinstellungen..." >&2
+        echo "Konfiguration 1: Basiskonfiguration (9600 8N1)" >&2
+        stty -F $DEVICE 9600 raw cs8 -cstopb -parenb -echo
+        
+        # Reset RTS/DTR Signale
+        if command -v stty &>/dev/null; then
+            echo "Setze RTS high, DTR low" >&2
+            # Versuche spezielle Signale zu setzen
+            stty -F $DEVICE -hupcl
+        fi
     fi
     
     # Warte einen Moment, bis die Schnittstelle bereit ist
@@ -372,15 +430,26 @@ function initialize_connection {
     # Flush any pending input
     dd if=$DEVICE iflag=nonblock of=/dev/null bs=1 count=1000 2>/dev/null || true
     
-    # Sende mehrere Wake-up Signale für bessere Erkennung
-    echo "Sende multiple Wake-up Signale (0x55)..." >&2
-    for i in {1..5}; do
+    # Sende erweiterte Wake-up Sequenz für bessere Erkennung
+    echo "Sende erweiterte Wake-up Sequenz (0x55, Pausen, 0x00)..." >&2
+    
+    # 1. Sende mehrere 0x55 mit längeren Pausen dazwischen
+    for i in {1..10}; do
         echo -ne "\x55" > $DEVICE
-        sleep 0.2
+        sleep 0.3
     done
     
-    # Zusätzliche Pause nach den Wake-up Signalen
+    # 2. Kurze Pause
     sleep 1.0
+    
+    # 3. Sende zusätzliche NULL-bytes für Synchronisierung
+    for i in {1..3}; do
+        echo -ne "\x00" > $DEVICE
+        sleep 0.3
+    done
+    
+    # 4. Finale Pause
+    sleep 1.5
     
     # Sende IDENT-Request
     echo "Sende Ident-Request..." >&2
@@ -490,10 +559,16 @@ function test_serial_configs {
     echo "Teste verschiedene serielle Konfigurationen für $DEVICE..." >&2
     
     local configs=(
-        "9600 raw cs8 -cstopb -parenb -echo"
+        "300 raw cs8 -cstopb -parenb -echo"    # Oft für ältere Zähler verwendet
+        "1200 raw cs8 -cstopb -parenb -echo"   # Ebenfalls häufig bei Zählern
+        "2400 raw cs8 -cstopb -parenb -echo"   # Mittlere Geschwindigkeit
+        "4800 raw cs8 -cstopb -parenb -echo"   # Häufig bei neueren Zählern
+        "9600 raw cs8 -cstopb -parenb -echo"   # Standard
         "9600 raw cs8 -cstopb -parenb -crtscts -echo"
         "9600 raw cs8 cstopb -parenb -echo"
         "9600 raw cs8 -cstopb parenb -echo"
+        "9600 raw cs8 -cstopb parenb parodd -echo"
+        "19200 raw cs8 -cstopb -parenb -echo"
     )
     
     local rts_dtr_settings=(
@@ -526,13 +601,37 @@ function test_serial_configs {
             echo -ne "\x55" > $DEVICE
             sleep 0.5
             
-            # Versuche Ident-Request
-            echo "Sende Test Ident-Request..." >&2
-            if send_message $REQUEST_ID_IDENT; then
-                echo "ERFOLG: Konfiguration funktioniert!" >&2
-                echo "Erfolgreiche Konfiguration: $config $rts_dtr" >&2
-                return 0
-            fi
+            # Teste verschiedene mögliche Start-Bytes für das Protokoll
+            local start_bytes=(0xEE 0xFF 0x01 0xFE)
+            
+            for test_start_byte in "${start_bytes[@]}"; do
+                echo "Teste Start-Byte $test_start_byte mit Konfiguration $config $rts_dtr" >&2
+                
+                # Temporär das Start-Byte ändern
+                local original_start=$START_BYTE
+                START_BYTE=$test_start_byte
+                
+                # Versuche Ident-Request
+                echo "Sende Test Ident-Request..." >&2
+                if send_message $REQUEST_ID_IDENT; then
+                    echo "ERFOLG: Konfiguration funktioniert mit Start-Byte $test_start_byte!" >&2
+                    echo "Erfolgreiche Konfiguration: $config $rts_dtr, Start-Byte: $test_start_byte" >&2
+                    
+                    # Speichere die erfolgreiche Konfiguration
+                    SUCCESSFUL_CONFIG="$config $rts_dtr"
+                    SUCCESSFUL_START_BYTE=$test_start_byte
+                    
+                    # Speichere die Konfiguration für zukünftige Nutzung
+                    save_successful_config
+                    
+                    # Originales Start-Byte wiederherstellen
+                    START_BYTE=$original_start
+                    return 0
+                fi
+                
+                # Originales Start-Byte wiederherstellen
+                START_BYTE=$original_start
+            done
             
             echo "Diese Konfiguration funktioniert nicht, versuche nächste..." >&2
             sleep 2
@@ -540,6 +639,148 @@ function test_serial_configs {
     done
     
     echo "Keine der getesteten Konfigurationen war erfolgreich." >&2
+    return 1
+}
+
+# Funktion für erweiterten Protokolltest mit verschiedenen Protokollvarianten
+function test_protocol_variants {
+    echo "Starte erweiterten Protokolltest für verschiedene Varianten..." >&2
+    
+    # Protokollvarianten zum Testen
+    local variants=(
+        "standard"       # Standard-C12.18
+        "legacy"         # Ältere Variante mit Start-Byte 0xFF
+        "simple"         # Vereinfachter Handshake für ältere Geräte
+        "inverted"       # Invertierte Kontroll-Bits
+    )
+    
+    # Teste jede Variante
+    for variant in "${variants[@]}"; do
+        echo "Teste Protokollvariante: $variant" >&2
+        
+        # Serielle Schnittstelle konfigurieren (verwenden Sie die aktuellen Einstellungen)
+        if [[ -n "$SUCCESSFUL_CONFIG" ]]; then
+            stty -F $DEVICE $SUCCESSFUL_CONFIG
+        else
+            # Standard-Konfiguration für den Test
+            stty -F $DEVICE 9600 raw cs8 -cstopb -parenb -echo -hupcl
+        fi
+        
+        # Setze Toggle-Control zurück
+        TOGGLE_CONTROL=0
+        
+        # Flush buffer
+        dd if=$DEVICE iflag=nonblock of=/dev/null bs=1 count=1000 2>/dev/null || true
+        sleep 1
+        
+        # Protokollspezifische Einstellungen anpassen
+        case "$variant" in
+            "standard")
+                # Standard-Einstellungen
+                START_BYTE=0xEE
+                IDENTITY_BYTE=0x00
+                ;;
+            "legacy")
+                # Ältere Geräte könnten ein anderes Start-Byte verwenden
+                START_BYTE=0xFF
+                IDENTITY_BYTE=0x00
+                ;;
+            "simple")
+                # Vereinfachter Handshake mit 0x01 als Start-Byte
+                START_BYTE=0x01
+                IDENTITY_BYTE=0x00
+                # Sende spezielle Wakeup-Sequenz
+                for i in {1..3}; do
+                    echo -ne "\x01" > $DEVICE
+                    sleep 0.5
+                done
+                ;;
+            "inverted")
+                # Einige Geräte verwenden invertierte Kontrollbits
+                START_BYTE=0xEE
+                IDENTITY_BYTE=0x01
+                ;;
+        esac
+        
+        echo "Variante $variant: START_BYTE=$START_BYTE, IDENTITY_BYTE=$IDENTITY_BYTE" >&2
+        
+        # Erweiterte Sequenz senden für bessere Erkennung
+        echo "Sende Wake-up-Sequenz für $variant..." >&2
+        for i in {1..5}; do
+            echo -ne "\x55" > $DEVICE
+            sleep 0.3
+        done
+        sleep 1.0
+        
+        # Versuche Ident-Request mit der aktuellen Variante
+        echo "Sende Test Ident-Request mit Variante $variant..." >&2
+        if send_message $REQUEST_ID_IDENT; then
+            echo "ERFOLG: Protokollvariante $variant funktioniert!" >&2
+            
+            # Speichere erfolgreiche Protokollvariante
+            SUCCESSFUL_VARIANT="$variant"
+            save_successful_config
+            
+            return 0
+        else
+            # Versuche ein alternatives Format für den Ident-Request
+            echo "Erste Anfrage fehlgeschlagen, versuche alternativen Ansatz..." >&2
+            
+            # Bei manchen Zählern muss man zuerst einen "Reset"-Befehl senden
+            if [[ "$variant" == "legacy" || "$variant" == "simple" ]]; then
+                echo "Sende Reset-Befehl für Variante $variant..." >&2
+                echo -ne "\x1B" > $DEVICE # ESC-Zeichen zum Zurücksetzen
+                sleep 1.0
+                
+                # Erneuter Versuch mit Ident-Request
+                if send_message $REQUEST_ID_IDENT; then
+                    echo "ERFOLG nach Reset: Protokollvariante $variant funktioniert!" >&2
+                    SUCCESSFUL_VARIANT="$variant"
+                    save_successful_config
+                    return 0
+                fi
+            fi
+        fi
+        
+        echo "Protokollvariante $variant funktioniert nicht." >&2
+        sleep 2
+    done
+    
+    echo "Keine der getesteten Protokollvarianten war erfolgreich." >&2
+    return 1
+}
+
+# Globale Variablen für erfolgreiche Konfigurationen
+SUCCESSFUL_CONFIG=""
+SUCCESSFUL_START_BYTE=0xEE
+SUCCESSFUL_VARIANT="standard"
+SUCCESSFUL_IDENTITY_BYTE=0x00
+CONFIG_FILE="${HOME}/.smart_meter_config"
+
+# Funktion zum Speichern der erfolgreichen Konfiguration
+function save_successful_config {
+    echo "# Smart Meter OSGP Reader Konfiguration" > "$CONFIG_FILE"
+    echo "SUCCESSFUL_CONFIG=\"$SUCCESSFUL_CONFIG\"" >> "$CONFIG_FILE"
+    echo "SUCCESSFUL_START_BYTE=$SUCCESSFUL_START_BYTE" >> "$CONFIG_FILE"
+    echo "SUCCESSFUL_VARIANT=\"$SUCCESSFUL_VARIANT\"" >> "$CONFIG_FILE"
+    echo "SUCCESSFUL_IDENTITY_BYTE=$SUCCESSFUL_IDENTITY_BYTE" >> "$CONFIG_FILE"
+    echo "Konfiguration gespeichert: $SUCCESSFUL_CONFIG, Start-Byte: $SUCCESSFUL_START_BYTE" >&2
+    echo "Protokollvariante: $SUCCESSFUL_VARIANT, Identity-Byte: $SUCCESSFUL_IDENTITY_BYTE" >&2
+}
+
+# Funktion zum Laden der erfolgreichen Konfiguration
+function load_saved_config {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        echo "Lade gespeicherte Konfiguration..." >&2
+        source "$CONFIG_FILE"
+        echo "Geladene Konfiguration:" >&2
+        echo "- Serielle Einstellungen: $SUCCESSFUL_CONFIG" >&2
+        echo "- Start-Byte: $SUCCESSFUL_START_BYTE" >&2
+        echo "- Protokollvariante: $SUCCESSFUL_VARIANT" >&2
+        echo "- Identity-Byte: $SUCCESSFUL_IDENTITY_BYTE" >&2
+        return 0
+    fi
+    echo "Keine gespeicherte Konfiguration gefunden" >&2
     return 1
 }
 
@@ -629,13 +870,16 @@ Optionen:
   -o, --output FILE      CSV-Ausgabedatei (Standard: $CSV_FILE)
   -D, --debug            Debug-Modus aktivieren (mehr Ausgaben)
   -t, --test-configs     Seriellen Port mit verschiedenen Konfigurationen testen
+  -P, --test-protocol    Verschiedene Protokollvarianten testen
+  -x, --diagnose         Detaillierte Protokolldiagnose durchführen
   -r, --max-retry NUM    Maximale Anzahl von Wiederholungsversuchen (Standard: $MAX_RETRY)
   -h, --help             Diese Hilfe anzeigen
 
 Beispiele:
   $0 --device /dev/ttyUSB0 --password "12345678" --interval 30
   $0 --debug --test-configs       # Nur serielle Konfigurationen testen
-  $0 --device /dev/ttyUSB1 --debug --max-retry 5
+  $0 --device /dev/ttyUSB1 --diagnose   # Detaillierte Protokolldiagnose durchführen
+  $0 --test-protocol              # Verschiedene Protokollvarianten testen
 EOH
     exit 0
 }
@@ -643,6 +887,8 @@ EOH
 # Kommandozeilenargumente verarbeiten
 parse_args() {
     TEST_CONFIGS_ONLY=0
+    TEST_PROTOCOL_ONLY=0
+    DIAGNOSE_ONLY=0
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -672,6 +918,14 @@ parse_args() {
                 ;;
             -t|--test-configs)
                 TEST_CONFIGS_ONLY=1
+                shift
+                ;;
+            -P|--test-protocol)
+                TEST_PROTOCOL_ONLY=1
+                shift
+                ;;
+            -x|--diagnose)
+                DIAGNOSE_ONLY=1
                 shift
                 ;;
             -r|--max-retry)
@@ -731,7 +985,7 @@ cleanup() {
 # Trap für CTRL+C
 trap cleanup SIGINT SIGTERM
 
-# Skript starten
+# Hauptskript-Steuerung mit den zusätzlichen Testoptionen
 echo "Smart Meter OSGP Reader gestartet" >&2
 echo "-------------------------------" >&2
 
@@ -751,7 +1005,10 @@ echo "- Debug-Modus: $([ "$DEBUG" -eq 1 ] && echo "Ein" || echo "Aus")" >&2
 echo "- Max. Wiederholungsversuche: $MAX_RETRY" >&2
 echo "-------------------------------" >&2
 
-# Führe nur Konfigurationstest aus, wenn dies angefordert wurde
+# CRC-Tabelle generieren
+generate_crc_table
+
+# Führe je nach Option verschiedene Modi aus
 if [[ "$TEST_CONFIGS_ONLY" -eq 1 ]]; then
     echo "Nur Test der seriellen Konfigurationen wird durchgeführt..." >&2
     test_port 9600 $DEVICE
@@ -763,10 +1020,124 @@ if [[ "$TEST_CONFIGS_ONLY" -eq 1 ]]; then
         echo "Test abgeschlossen, keine erfolgreiche Konfiguration gefunden." >&2
         exit 1
     fi
+elif [[ "$TEST_PROTOCOL_ONLY" -eq 1 ]]; then
+    echo "Nur Test der Protokollvarianten wird durchgeführt..." >&2
+    # Test der verschiedenen Protokollvarianten
+    if test_protocol_variants; then
+        echo "Protokolltest abgeschlossen, erfolgreich!" >&2
+        exit 0
+    else
+        echo "Protokolltest abgeschlossen, keine erfolgreiche Variante gefunden." >&2
+        exit 1
+    fi
+elif [[ "$DIAGNOSE_ONLY" -eq 1 ]]; then
+    echo "Nur detaillierte Protokolldiagnose wird durchgeführt..." >&2
+    # Führe detaillierte Diagnose durch
+    diagnose_protocol
+    exit 0
+else
+    # Normaler Betriebsmodus - starte Hauptfunktion
+    main
 fi
 
-# CRC-Tabelle generieren, bevor main() aufgerufen wird
-generate_crc_table
+# Funktion für detaillierte Protokolldiagnose
+function diagnose_protocol {
+    echo "Starte detaillierte Protokolldiagnose..." >&2
+    
+    # Erzeuge temporäre Dateien für die Protokollierung
+    local diagnose_log=$(mktemp)
+    local raw_log=$(mktemp)
+    
+    echo "Protokolldiagnose gestartet am $(date)" > "$diagnose_log"
+    echo "Gerät: $DEVICE" >> "$diagnose_log"
+    echo "Serielle Einstellungen: " >> "$diagnose_log"
+    stty -F $DEVICE -a >> "$diagnose_log"
+    
+    # Testsequenz für die Diagnose
+    echo "Sende verschiedene Wake-up Sequenzen für Diagnose..." | tee -a "$diagnose_log" >&2
+    
+    # Serielle Verbindung zurücksetzen
+    if command -v stty &>/dev/null; then
+        stty -F $DEVICE 0 # Reset
+        sleep 0.5
+    fi
+    
+    # Teste verschiedene Baudraten für die Diagnose
+    echo "Teste Kommunikation mit verschiedenen Baudraten..." | tee -a "$diagnose_log" >&2
+    
+    for baudrate in 300 1200 2400 4800 9600; do
+        echo "Teste mit $baudrate Baud..." | tee -a "$diagnose_log" >&2
+        stty -F $DEVICE $baudrate raw cs8 -cstopb -parenb -echo
+        
+        # Puffer leeren
+        dd if=$DEVICE iflag=nonblock of=/dev/null bs=1 count=100 2>/dev/null || true
+        
+        # Reset serielles Gerät
+        echo -ne "\x00" > $DEVICE
+        sleep 0.5
+        
+        # Sende Wake-up Sequenz (0x55)
+        for i in {1..3}; do
+            echo -ne "\x55" > $DEVICE
+            sleep 0.3
+        done
+        
+        # Empfange mögliche Antworten
+        echo "Empfange mögliche Antworten bei $baudrate Baud:" | tee -a "$diagnose_log" >&2
+        dd if=$DEVICE of="$raw_log" bs=1 count=20 iflag=nonblock 2>/dev/null
+        
+        echo "Hex-Dump der empfangenen Daten:" | tee -a "$diagnose_log" >&2
+        hexdump -C "$raw_log" | tee -a "$diagnose_log" >&2
+        
+        # Überprüfe auf bekannte Antwortmuster
+        if grep -q -a "\x06" "$raw_log"; then
+            echo "ACK (0x06) gefunden bei $baudrate Baud!" | tee -a "$diagnose_log" >&2
+        fi
+        
+        if grep -q -a "\x15" "$raw_log"; then
+            echo "NACK (0x15) gefunden bei $baudrate Baud!" | tee -a "$diagnose_log" >&2
+        fi
+        
+        sleep 1
+    done
 
-# Hauptprogramm starten
-main
+    # Teste verschiedene Start-Byte-Sequenzen
+    echo "Teste verschiedene Start-Byte-Sequenzen..." | tee -a "$diagnose_log" >&2
+    
+    # Setze Standard-Baudrate für weitere Tests
+    stty -F $DEVICE 9600 raw cs8 -cstopb -parenb -echo
+    
+    for start_byte in '\xEE' '\xFF' '\x01' '\xFE' '\x7E'; do
+        echo "Teste mit Start-Byte $start_byte..." | tee -a "$diagnose_log" >&2
+        
+        # Puffer leeren
+        dd if=$DEVICE iflag=nonblock of=/dev/null bs=1 count=100 2>/dev/null || true
+        
+        # Sende Start-Byte gefolgt von einer einfachen Sequenz
+        echo -ne "$start_byte\x00\x00\x00\x01\x00\x20" > $DEVICE
+        sleep 0.5
+        
+        # Empfange mögliche Antworten
+        echo "Empfange mögliche Antworten für Start-Byte $start_byte:" | tee -a "$diagnose_log" >&2
+        dd if=$DEVICE of="$raw_log" bs=1 count=20 iflag=nonblock 2>/dev/null
+        
+        echo "Hex-Dump der empfangenen Daten:" | tee -a "$diagnose_log" >&2
+        hexdump -C "$raw_log" | tee -a "$diagnose_log" >&2
+        
+        sleep 1
+    done
+    
+    # Fasse die Ergebnisse zusammen
+    echo "Diagnose abgeschlossen. Ergebnisse wurden in $diagnose_log gespeichert." >&2
+    echo "-----------------------------------------------------------" | tee -a "$diagnose_log" >&2
+    echo "Empfehlungen für die weitere Fehlerbehebung:" | tee -a "$diagnose_log" >&2
+    echo "1. Überprüfen Sie die physische Verbindung zum Smart Meter" | tee -a "$diagnose_log" >&2
+    echo "2. Stellen Sie sicher, dass der optische Kopf korrekt ausgerichtet ist" | tee -a "$diagnose_log" >&2
+    echo "3. Testen Sie verschiedene serielle Einstellungen mit --test-configs" | tee -a "$diagnose_log" >&2
+    echo "4. Prüfen Sie das verwendete Protokoll (C12.18, DLMS/COSEM, etc.)" | tee -a "$diagnose_log" >&2
+    echo "5. Überprüfen Sie die Benutzername/Passwort-Einstellungen des Zählers" | tee -a "$diagnose_log" >&2
+    echo "-----------------------------------------------------------" | tee -a "$diagnose_log" >&2
+    
+    echo "Diagnoseprotokoll wurde gespeichert in: $diagnose_log" >&2
+    rm -f "$raw_log"
+}
