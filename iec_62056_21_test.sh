@@ -222,7 +222,7 @@ function test_ansi_c12_19_tables {
                 
                 # Sende Full Read Request (0x30) für die Tabelle
                 # Format: START IDENTITY CONTROL RESERVED LENGTH_LOW LENGTH_HIGH COMMAND TABLE_ID_LOW TABLE_ID_HIGH
-                echo -ne "\xEE\x00\x00\x00\x03\x00\x30\x${table_low}\x${table_high}" > $DEVICE
+                echo -ne "\xEE\x00\x00\x00\x03\x00\x30\x$(printf "%02x" "0x$table_low")\x$(printf "%02x" "0x$table_high")" > $DEVICE
                 sleep 1
                 
                 # Empfange Antwort
