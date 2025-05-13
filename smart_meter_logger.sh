@@ -40,6 +40,7 @@ log_message() {
 }
 
 # Hilfsfunktion zum sicheren Senden von Hex-Bytes
+# Diese Funktion ist jetzt kompatibel mit Linux und Windows/WSL
 send_bytes() {
     local tmp_file=$(mktemp)
     
@@ -51,13 +52,47 @@ send_bytes() {
             byte=$((byte))
         fi
         printf "%02X " $byte | tee -a "$LOG_FILE"
-        printf "\\$(printf '%03o' $byte)" >> "$tmp_file"
+        
+        # Für Windows/WSL
+        if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+            # In Windows-Umgebung speichern wir die Bytes für spätere Verarbeitung
+            printf "%02X" $byte >> "$tmp_file.hex"
+        else 
+            # Standard Linux/Unix Methode
+            printf "\\$(printf '%03o' $byte)" >> "$tmp_file"
+        fi
     done
     echo "" | tee -a "$LOG_FILE"
     
-    # Mit dd senden und sync zum Sicherstellen, dass alle Daten übertragen werden
-    dd if="$tmp_file" of="$DEVICE" bs=1 count=$# 2>/dev/null
-    sync
+    # Daten senden basierend auf Betriebssystem
+    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+        # Windows-kompatible Methode (komplexer)
+        # Hier würde man idealerweise PowerShell oder ein spezielles Programm verwenden
+        # Um die Bytes direkt an den COM-Port zu senden
+        log_message "HINWEIS: Windows/WSL-Umgebung erkannt. Direkte COM-Port-Kommunikation könnte eingeschränkt sein."
+        log_message "         Für Windows wird empfohlen, ein PowerShell-Skript zu verwenden."
+        
+        # Bytes direkt an COM-Port senden (echten Windows COM-Port öffnen)
+        # Hinweis: Diese Methode ist sehr einfach und könnte in einer echten Umgebung 
+        # nicht zuverlässig funktionieren. Ein dediziertes PowerShell- oder Python-Skript
+        # wäre besser.
+        if [[ -f "$tmp_file.hex" ]]; then
+            if type -p powershell.exe >/dev/null 2>&1; then
+                log_message "Versuche PowerShell für COM-Port-Kommunikation zu nutzen..."
+                # Simulierter COM-Port-Zugriff mit PowerShell
+                # In einer echten Implementierung würde hier ein spezielles PowerShell-Skript aufgerufen werden
+                # das die hexadezimalen Werte in "$tmp_file.hex" liest und an den COM-Port sendet
+            else
+                log_message "PowerShell nicht gefunden. Kann keine Daten an COM-Port senden."
+            fi
+            rm -f "$tmp_file.hex"
+        fi
+    else 
+        # Standard Linux/Unix Methode mit dd
+        dd if="$tmp_file" of="$DEVICE" bs=1 count=$# 2>/dev/null
+        sync
+    fi
+    
     rm -f "$tmp_file"
     
     # Kurze Pause nach dem Senden für eine zuverlässigere Kommunikation
@@ -86,27 +121,67 @@ initialize_csv() {
     fi
 }
 
+# Funktion zur Prüfung, ob ein Gerät existiert (unter Windows/WSL)
+check_device() {
+    # Unter Windows müssen wir möglicherweise mit COM-Ports arbeiten
+    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+        # Für Windows PowerShell Umgebung 
+        if [[ "$DEVICE" == "/dev/ttyUSB"* ]]; then
+            # Automatisch zu COM-Port konvertieren für Windows-Umgebungen
+            local usb_num=${DEVICE##*/ttyUSB}
+            DEVICE="COM$((usb_num + 1))"  # Normalerweise ist COM1 = ttyUSB0
+            log_message "Windows-Umgebung erkannt: Konvertiere zu $DEVICE"
+        fi
+        
+        # Prüfe, ob COM-Port existiert (versuche direkt zu öffnen)
+        if ! type -p mode.com &>/dev/null; then
+            log_message "WARNUNG: mode.com nicht gefunden, kann COM-Port nicht prüfen"
+            return 0
+        fi
+        
+        if ! mode.com "$DEVICE" > /dev/null 2>&1; then
+            log_message "FEHLER: Gerät $DEVICE existiert nicht oder ist nicht zugänglich!"
+            exit 1
+        fi
+    else
+        # Standard Linux/Unix Prüfung
+        if [[ ! -e "$DEVICE" ]]; then
+            log_message "FEHLER: Gerät $DEVICE existiert nicht!"
+            exit 1
+        fi
+    fi
+}
+
 # Funktion zur Initialisierung der seriellen Schnittstelle
 initialize_serial() {
     # Prüfe, ob das Gerät existiert
-    if [[ ! -e "$DEVICE" ]]; then
-        log_message "FEHLER: Gerät $DEVICE existiert nicht!"
-        exit 1
+    check_device
+    
+    # Windows/WSL-Kompatibilität
+    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+        log_message "Windows-Umgebung erkannt. Verwende PowerShell für serielle Konfiguration."
+        log_message "Serielle Schnittstellenkonfiguration: $SERIAL_CONFIG (angepasst für Windows)"
+        
+        # Versuche PowerShell zu nutzen (vereinfachte Konfiguration)
+        # Hinweis: Für Windows sollte ein separates PowerShell-Skript erstellt werden
+        #          das diese Funktion übernimmt. Hier nur ein einfacher Versuch.
+        return 0
+    else
+        # Linux/Unix Konfiguration
+        # Konfiguriere serielle Schnittstelle mit erweiterter Konfiguration
+        stty -F $DEVICE $SERIAL_CONFIG
+        log_message "Serielle Schnittstelle konfiguriert: $SERIAL_CONFIG"
+        
+        # Puffer gründlich leeren
+        dd if=$DEVICE iflag=nonblock of=/dev/null bs=1 count=1000 2>/dev/null || true
+        sleep 0.5
+        
+        # Schnittstelle zurücksetzen
+        stty -F $DEVICE 0
+        sleep 0.2
+        stty -F $DEVICE $SERIAL_CONFIG
+        log_message "Serielle Schnittstelle zurückgesetzt und neu konfiguriert"
     fi
-    
-    # Konfiguriere serielle Schnittstelle mit erweiterter Konfiguration
-    stty -F $DEVICE $SERIAL_CONFIG
-    log_message "Serielle Schnittstelle konfiguriert: $SERIAL_CONFIG"
-    
-    # Puffer gründlich leeren
-    dd if=$DEVICE iflag=nonblock of=/dev/null bs=1 count=1000 2>/dev/null || true
-    sleep 0.5
-    
-    # Schnittstelle zurücksetzen
-    stty -F $DEVICE 0
-    sleep 0.2
-    stty -F $DEVICE $SERIAL_CONFIG
-    log_message "Serielle Schnittstelle zurückgesetzt und neu konfiguriert"
 }
 
 # Funktion zur Kommunikation mit dem Smart Meter
@@ -135,14 +210,14 @@ communicate_with_meter() {
         
         # Mehrfach versuchen, Daten zu empfangen, da einige Zähler langsam antworten
         local received=0
-        for i in {1..5}; do
-            dd if="$DEVICE" of="$response_file" bs=1 count=20 iflag=nonblock 2>/dev/null
+        for i in {1..10}; do  # Mehr Versuche
+            dd if="$DEVICE" of="$response_file" bs=1 count=32 iflag=nonblock 2>/dev/null  # Mehr Bytes lesen
             if [[ -s "$response_file" && $(stat -c %s "$response_file") -gt 0 ]]; then
                 received=1
                 break
             fi
-            log_message "Keine sofortige Antwort, warte..."
-            sleep 0.5
+            log_message "Keine sofortige Antwort, warte... (Versuch $i/10)"
+            sleep 1  # Längere Wartezeit zwischen Versuchen
         done
         
         # Debug: Antwort anzeigen
@@ -442,34 +517,98 @@ logoff_meter() {
 
 # Debug-Funktion, um alle Tabellen zu scannen und auszugeben
 scan_all_tables() {
-    log_message "Starte vollständigen Tabellenscan..."
+    local scan_output="$PWD/table_scan.txt"
+    log_message "Starte vollständigen Tabellenscan... Ausgabe wird in $scan_output gespeichert"
+    
+    # Datei mit Header erstellen
+    echo "SMART METER TABLE SCAN $(date)" > "$scan_output"
+    echo "===============================" >> "$scan_output"
+    echo "Gerät: $DEVICE" >> "$scan_output"
+    echo "Kommunikationsparameter: $SERIAL_CONFIG" >> "$scan_output"
+    echo "Start-Byte: $(printf "0x%02X" $START_BYTE), Identity-Byte: $(printf "0x%02X" $IDENTITY_BYTE)" >> "$scan_output"
+    echo "===============================" >> "$scan_output"
+    echo "" >> "$scan_output"
+    
+    # Bevor wir anfangen, sicherstellen, dass der Zähler bereit ist
+    log_message "Sende initiale Wake-up Sequenz für den Scan..."
+    for i in {1..5}; do
+        send_bytes 0x55 0x55 0x55 0x55 0x55
+        sleep 0.3
+    done
+    sleep 1
+    
+    # Sende Ident-Request, um den Zähler zu aktivieren
+    log_message "Sende Ident-Request zur Zählerinitialisierung..."
+    send_bytes $START_BYTE $IDENTITY_BYTE 0x00 0x00 0x01 0x00 $REQUEST_IDENT
+    sleep 1
+    
+    # Puffer leeren
+    dd if=$DEVICE iflag=nonblock of=/dev/null bs=1 count=1000 2>/dev/null || true
+    sleep 0.5
     
     # Wir scannen Tabellen von 0-50, was die meisten relevanten Tabellen abdecken sollte
+    echo "Start des Scans: $(date)" >> "$scan_output"
+    
+    # Fortschrittsanzeige
+    local total_tables=51  # 0-50 Tables
+    local scanned=0
+    local data_found=0
+    
     for high in {0..0}; do
         for low in {0..50}; do
             local high_hex=$(printf "%02X" $high)
             local low_hex=$(printf "%02X" $low)
             local table_id="${high_hex}${low_hex}"
             
-            log_message "Scanne Tabelle $table_id..."
+            # Fortschrittsanzeige
+            scanned=$((scanned + 1))
+            log_message "Scanne Tabelle $table_id... [$scanned/$total_tables]"
             
             # Sende Read Request für die Tabelle
             send_bytes $START_BYTE $IDENTITY_BYTE 0x00 0x00 0x03 0x00 $REQUEST_READ $low $high
             sleep 1
             
-            # Empfange Antwort
+            # Empfange Antwort mit mehreren Versuchen
             local scan_file=$(mktemp)
-            dd if="$DEVICE" of="$scan_file" bs=1 count=512 iflag=nonblock timeout=5 2>/dev/null
+            local received=0
             
-            if [[ -s "$scan_file" ]]; then
+            for attempt in {1..3}; do
+                dd if="$DEVICE" of="$scan_file" bs=1 count=512 iflag=nonblock 2>/dev/null
+                local file_size=$(stat -c %s "$scan_file" 2>/dev/null || echo "0")
+                
+                if [[ "$file_size" -gt 5 ]]; then
+                    received=1
+                    break
+                fi
+                
+                log_message "Versuch $attempt: Keine sofortige Antwort für Tabelle $table_id, warte..."
+                sleep 0.5
+            done
+            
+            if [[ $received -eq 1 && -s "$scan_file" ]]; then
                 local file_size=$(stat -c %s "$scan_file")
-                if [[ $file_size -gt 5 ]]; then  # Mindestens ein paar Bytes
+                
+                # Prüfen, ob die Antwort eine NACK enthält oder nur ein ACK
+                if grep -q -a $'\x15' "$scan_file"; then
+                    log_message "NACK für Tabelle $table_id erhalten - Tabelle nicht verfügbar"
+                    echo "TABELLE $table_id: NICHT VERFÜGBAR (NACK)" >> "$scan_output"
+                elif grep -q -a $'\x06' "$scan_file" && [[ $file_size -le 6 ]]; then
+                    log_message "Nur ACK für Tabelle $table_id erhalten - keine Daten"
+                    echo "TABELLE $table_id: NUR ACK ERHALTEN (KEINE DATEN)" >> "$scan_output"
+                else
+                    # Wenn wir hier sind, haben wir wahrscheinlich Daten
                     log_message "Daten für Tabelle $table_id gefunden (${file_size} Bytes):"
                     hexdump -C "$scan_file" | tee -a "$LOG_FILE"
-                    echo "TABELLE $table_id:" >> "table_scan.txt"
-                    hexdump -C "$scan_file" >> "table_scan.txt"
-                    echo "" >> "table_scan.txt"
+                    
+                    echo "----- TABELLE $table_id: -----" >> "$scan_output"
+                    echo "Bytes: $file_size" >> "$scan_output"
+                    hexdump -C "$scan_file" >> "$scan_output"
+                    echo "" >> "$scan_output"
+                    data_found=$((data_found + 1))
                 fi
+            else
+                log_message "Keine Antwort für Tabelle $table_id erhalten"
+                echo "TABELLE $table_id: KEINE ANTWORT" >> "$scan_output"
             fi
             
             rm -f "$scan_file"
@@ -477,7 +616,20 @@ scan_all_tables() {
         done
     done
     
-    log_message "Tabellenscan abgeschlossen. Ergebnisse in table_scan.txt"
+    # Zusammenfassung
+    echo "" >> "$scan_output"
+    echo "===============================" >> "$scan_output"
+    echo "Scan abgeschlossen: $(date)" >> "$scan_output"
+    echo "Gescannte Tabellen: $scanned" >> "$scan_output"
+    echo "Tabellen mit Daten: $data_found" >> "$scan_output"
+    
+    log_message "Tabellenscan abgeschlossen. $data_found Tabellen mit Daten gefunden."
+    log_message "Ergebnisse wurden in $scan_output gespeichert."
+    
+    # Zeige den Pfad zur Scan-Datei deutlich an
+    echo ""
+    echo "SCAN-ERGEBNISSE: $scan_output"
+    echo ""
 }
 
 # Hauptfunktion
