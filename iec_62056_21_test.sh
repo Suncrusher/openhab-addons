@@ -187,18 +187,35 @@ function test_ansi_c12_19_tables {
     
     # Authentifizierungsversuch mit Passwort
     echo "Versuche Authentifizierung mit Passwort: $PASSWORD"
-    # Konvertiere Passwort in Hex-Bytes für die Übertragung
-    password_hex=""
+    
+    # Direktere und sicherere Methode zur Passwortübertragung
+    # Erstelle eine temporäre Datei mit den Bytes
+    local auth_request=$(mktemp)
+    
+    # Header schreiben
+    printf "\xEE\x00\x00\x00" > $auth_request
+    
+    # Länge schreiben
+    password_len=${#PASSWORD}
+    printf "$(printf "\\x%02x" $password_len)" >> $auth_request
+    
+    # Restlicher Header
+    printf "\x00\x50" >> $auth_request
+    
+    # Passwort schreiben - Zeichen für Zeichen um printf-Fehler zu vermeiden
     for (( i=0; i<${#PASSWORD}; i++ )); do
         char="${PASSWORD:$i:1}"
-        hex_val=$(printf "%02x" "'$char")
-        password_hex+="\x$hex_val"
+        # Vermeide Fehler mit Sonderzeichen
+        if [[ $(printf "%d" "'$char" 2>/dev/null) ]]; then
+            printf "$(printf "\\x%02x" "'$char")" >> $auth_request
+        else
+            printf "\x3F" >> $auth_request  # Fragezeichen für nicht-druckbare Zeichen
+        fi
     done
     
-    # Sende LOGON-Request (0x50) mit Passwort (ANSI C12.18)
-    # Format: START IDENTITY CONTROL RESERVED LENGTH_LOW LENGTH_HIGH COMMAND PASSWORD
-    password_len=${#PASSWORD}
-    echo -ne "\xEE\x00\x00\x00$(printf "\\x%02x" "$password_len")\x00\x50$password_hex" > $DEVICE
+    # Sende den vollständigen Befehl zum Gerät
+    cat $auth_request > $DEVICE
+    rm -f $auth_request
     sleep 1
     
     # Empfange Antwort
@@ -220,9 +237,20 @@ function test_ansi_c12_19_tables {
                 local table_high=$(echo "$table" | cut -c1-2)
                 local table_low=$(echo "$table" | cut -c3-4)
                 
-                # Sende Full Read Request (0x30) für die Tabelle
+                # Erstelle eine temporäre Datei für den Befehl
+                local table_request=$(mktemp)
+                
                 # Format: START IDENTITY CONTROL RESERVED LENGTH_LOW LENGTH_HIGH COMMAND TABLE_ID_LOW TABLE_ID_HIGH
-                echo -ne "\xEE\x00\x00\x00\x03\x00\x30\x$(printf "%02x" "0x$table_low")\x$(printf "%02x" "0x$table_high")" > $DEVICE
+                # Schreibe die Bytes nacheinander, um printf-Fehler zu vermeiden
+                printf "\xEE\x00\x00\x00\x03\x00\x30" > $table_request
+                
+                # Konvertiere die Tabellen-IDs zu Hex und schreibe sie
+                printf "$(printf "\\x%02x" 0x$table_low)" >> $table_request
+                printf "$(printf "\\x%02x" 0x$table_high)" >> $table_request
+                
+                # Sende den vollständigen Befehl zum Gerät
+                cat $table_request > $DEVICE
+                rm -f $table_request
                 sleep 1
                 
                 # Empfange Antwort
@@ -295,4 +323,3 @@ fi
 
 # Starte Hauptfunktion
 main
-
