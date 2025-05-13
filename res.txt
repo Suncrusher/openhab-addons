@@ -1,22 +1,77 @@
-Tabellenscan-Modus aktiviert
-[2025-05-14 00:23:32] Smart Meter Logger gestartet
-[2025-05-14 00:23:32] Gerät: /dev/ttyUSB0, Intervall: 60 Sekunden
-[2025-05-14 00:23:32] Serielle Schnittstelle konfiguriert: 9600 raw cs8 -cstopb -parenb -echo -hupcl -ixoff -ixon
-stty: /dev/ttyUSB0: es ist nicht möglich, alle angeforderten Operationen durchzuführen
-[2025-05-14 00:23:33] Serielle Schnittstelle zurückgesetzt und neu konfiguriert
-[2025-05-14 00:23:33] DEBUG-MODUS: Führe einmaligen Tabellenscan durch
-[2025-05-14 00:23:33] Starte vollständigen Tabellenscan... Ausgabe wird in /home/openhabian/table_scan.txt gespeichert
-[2025-05-14 00:23:33] Sende initiale Wake-up Sequenz für den Scan...
+[2025-05-14 00:55:02] Kommunikationsversuch 1/3...
+[2025-05-14 00:55:02] Sende Wake-up Sequenz...
 Sende: 55 55 55 55 55
+[2025-05-14 00:55:02] Sende Daten an /dev/ttyUSB0...
 Sende: 55 55 55 55 55
+[2025-05-14 00:55:02] Sende Daten an /dev/ttyUSB0...
 Sende: 55 55 55 55 55
-Sende: 55 55 55 55 55
-Sende: 55 55 55 55 55
-[2025-05-14 00:23:37] Initialisiere Verbindung zum Zähler...
-[2025-05-14 00:23:37] Sende Request-ID: 0x20
+[2025-05-14 00:55:03] Sende Daten an /dev/ttyUSB0...
+[2025-05-14 00:55:05] Sende Ident-Request...
+[2025-05-14 00:55:05] Sende Request-ID: 0x20
 Sende: EE 00 00 00 01 00 20 17 53
-[2025-05-14 00:23:37] Unerwartete Antwort: 0xFF
-[2025-05-14 00:23:38] Keine Antwort erhalten, Versuch 2 von 3
-[2025-05-14 00:23:39] Keine Antwort erhalten, Versuch 3 von 3
-[2025-05-14 00:23:40] Keine ACK-Antwort nach 3 Versuchen
-[2025-05-14 00:23:40] FEHLER: Ident-Request fehlgeschlagen. Breche Scan ab.
+[2025-05-14 00:55:05] Sende Daten an /dev/ttyUSB0...
+[2025-05-14 00:55:06] Warte auf Antwort... (Versuch 1/5)
+[2025-05-14 00:55:06] Antwort empfangen: FF 00 00 00 01 00 20 17 53 15  (erster Byte: 0xFF)
+[2025-05-14 00:55:06] Alternative Bestätigung (0xFF) empfangen, wird als ACK akzeptiert
+[2025-05-14 00:55:06] Sende Negotiate-Request
+Sende: EE 00 20 00 05 00 61 40 00 02 06 C1 16
+[2025-05-14 00:55:07] Sende Daten an /dev/ttyUSB0...
+[2025-05-14 00:55:07] Warte auf Antwort... (Versuch 1/5)
+[2025-05-14 00:55:07] Antwort empfangen: FF 00 20 00 05 00 21 01 02 06  (erster Byte: 0xFF)
+[2025-05-14 00:55:07] Alternative Bestätigung (0xFF) empfangen, wird als ACK akzeptiert
+[2025-05-14 00:55:08] Negotiate erfolgreich
+[2025-05-14 00:55:08] Sende Logon-Request für User-ID: 0, Username: User
+Sende: EE 00 00 00 0D 00 50 00 00 55 73 65 72 20 20 20 20 20 20 E3 6E
+[2025-05-14 00:55:08] Sende Daten an /dev/ttyUSB0...
+[2025-05-14 00:55:08] Warte auf Antwort... (Versuch 1/5)
+[2025-05-14 00:55:09] Antwort empfangen: FF 00 00 00 0D 00 50 00 55 73  (erster Byte: 0xFF)
+[2025-05-14 00:55:09] Alternative Bestätigung (0xFF) empfangen, wird als ACK akzeptiert
+[2025-05-14 00:55:09] Logon erfolgreich
+[2025-05-14 00:55:09] Sende Security-Request mit Passwort
+Sende: EE 00 20 00 15 00 51 65 33 32 39 62 30 34 32 38 63 31 36 63 37 34 63 30 31 32 35 D9 A5
+[2025-05-14 00:55:10] Sende Daten an /dev/ttyUSB0...
+[2025-05-14 00:55:10] Warte auf Antwort... (Versuch 1/5)
+[2025-05-14 00:55:10] Antwort empfangen: FF 00 20 00 15 00 51 65 33 32  (erster Byte: 0xFF)
+[2025-05-14 00:55:11] Alternative Bestätigung (0xFF) empfangen, wird als ACK akzeptiert
+[2025-05-14 00:55:11] Security-Request erfolgreich
+[2025-05-14 00:55:11] Sende Read-Table-Request für Tabelle 0
+Sende: EE 00 00 00 03 00 30 00 00 DD 24
+[2025-05-14 00:55:11] Sende Daten an /dev/ttyUSB0...
+[2025-05-14 00:55:11] Warte auf Antwort... (Versuch 1/5)
+[2025-05-14 00:55:12] Antwort empfangen: FF 00 00 00 03 00 30 00 00 DD  (erster Byte: 0xFF)
+[2025-05-14 00:55:12] Alternative Bestätigung (0xFF) empfangen, wird als ACK akzeptiert
+[2025-05-14 00:55:12] Tabelle 0 erfolgreich gelesen
+[2025-05-14 00:55:12] Lese Zählerstände aus...
+[2025-05-14 00:55:12] Lese Tabelle 23 (Energiewerte)...
+[2025-05-14 00:55:12] Sende Read-Table-Request für Tabelle 23
+Sende: EE 00 20 00 03 00 30 17 00 C7 9F
+[2025-05-14 00:55:12] Sende Daten an /dev/ttyUSB0...
+[2025-05-14 00:55:13] Warte auf Antwort... (Versuch 1/5)
+[2025-05-14 00:55:13] Antwort empfangen: FF 00 20 00 03 00 30 20 C7 9F  (erster Byte: 0xFF)
+[2025-05-14 00:55:13] Alternative Bestätigung (0xFF) empfangen, wird als ACK akzeptiert
+[2025-05-14 00:55:14] Keine Daten für Tabelle 23 empfangen
+[2025-05-14 00:55:14] Lese Tabelle 28 (Momentanwerte)...
+[2025-05-14 00:55:14] Sende Read-Partial-Table-Request für Tabelle 28, Offset 0, 40 Bytes
+Sende: EE 00 00 00 08 00 3F 1C 00 00 00 00 28 00 D9 F4
+[2025-05-14 00:55:15] Sende Daten an /dev/ttyUSB0...
+[2025-05-14 00:55:15] Warte auf Antwort... (Versuch 1/5)
+[2025-05-14 00:55:16] Antwort empfangen: FF 00 00 00 08 00 3F 1C 00 00  (erster Byte: 0xFF)
+[2025-05-14 00:55:16] Alternative Bestätigung (0xFF) empfangen, wird als ACK akzeptiert
+[2025-05-14 00:55:16] Keine Daten für Tabelle 28 empfangen
+[2025-05-14 00:55:16] Keine verwertbaren Daten erhalten
+[2025-05-14 00:55:16] Sende Request-ID: 0x52
+Sende: EE 00 20 00 01 00 52 13 63
+[2025-05-14 00:55:17] Sende Daten an /dev/ttyUSB0...
+[2025-05-14 00:55:17] Warte auf Antwort... (Versuch 1/5)
+[2025-05-14 00:55:17] Antwort empfangen: FF 00 20 00 01 00 52 01 63  (erster Byte: 0xFF)
+[2025-05-14 00:55:17] Alternative Bestätigung (0xFF) empfangen, wird als ACK akzeptiert
+[2025-05-14 00:55:17] Sende Request-ID: 0x21
+Sende: EE 00 00 00 01 00 21 9E 42
+[2025-05-14 00:55:18] Sende Daten an /dev/ttyUSB0...
+[2025-05-14 00:55:18] Warte auf Antwort... (Versuch 1/5)
+[2025-05-14 00:55:19] Antwort empfangen: FF 00 00 00 01 00 21 9E 42 15  (erster Byte: 0xFF)
+[2025-05-14 00:55:19] Alternative Bestätigung (0xFF) empfangen, wird als ACK akzeptiert
+[2025-05-14 00:55:19] Erfolgreich Daten vom Zähler gelesen
+[2025-05-14 00:55:19] Warte 60 Sekunden bis zur nächsten Abfrage...
+^C[2025-05-14 00:55:52] Skript wird beendet...
+[2025-05-14 00:55:52] Melde vom Zähler ab...
